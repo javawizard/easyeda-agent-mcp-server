@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "eda-pro": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "/Users/smallraw/Development/QuincyWork/easyeda-agent-mcp-server/dist/mcp-server/index.js"
+      ],
+      "env": {}
+    }
+  }
+}
