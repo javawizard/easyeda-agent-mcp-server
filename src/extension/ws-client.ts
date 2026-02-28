@@ -66,7 +66,7 @@ export function connectToMcpServer(extensionUuid: string, onConnected?: () => vo
 			}
 		},
 		() => {
-			eda.sys_Message.showToastMessage('Connected to Claude MCP Server at ' + WS_URL, 'success' as any, 5);
+			eda.sys_Message.showToastMessage('Connected to Claude MCP Server at ' + WS_URL, ESYS_ToastMessageType.SUCCESS, 5);
 			onConnected?.();
 		},
 	);

@@ -8,11 +8,11 @@ export function activate(status?: 'onStartupFinished', arg?: string): void {}
 
 export function connectClaude(): void {
 	if (connected) {
-		eda.sys_Message.showToastMessage('Already connected to Claude MCP Server', 'warn' as any, 3);
+		eda.sys_Message.showToastMessage('Already connected to Claude MCP Server', ESYS_ToastMessageType.WARNING, 3);
 		return;
 	}
 	try {
-		eda.sys_Message.showToastMessage('Connecting to Claude MCP Server...', 'info' as any, 3);
+		eda.sys_Message.showToastMessage('Connecting to Claude MCP Server...', ESYS_ToastMessageType.INFO, 3);
 		connectToMcpServer(extensionConfig.uuid, () => {
 			connected = true;
 		});
@@ -26,12 +26,12 @@ export function connectClaude(): void {
 
 export function disconnectClaude(): void {
 	if (!connected) {
-		eda.sys_Message.showToastMessage('Not connected to Claude MCP Server', 'warn' as any, 3);
+		eda.sys_Message.showToastMessage('Not connected to Claude MCP Server', ESYS_ToastMessageType.WARNING, 3);
 		return;
 	}
 	disconnectFromMcpServer(extensionConfig.uuid);
 	connected = false;
-	eda.sys_Message.showToastMessage('Disconnected from Claude MCP Server', 'info' as any, 3);
+	eda.sys_Message.showToastMessage('Disconnected from Claude MCP Server', ESYS_ToastMessageType.INFO, 3);
 }
 
 export function about(): void {
