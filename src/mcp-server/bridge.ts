@@ -29,6 +29,35 @@ export class WebSocketBridge {
 		this.timeout = timeout;
 	}
 
+	getPort(): number {
+		return this.port;
+	}
+
+	static async startOnAvailablePort(
+		portStart: number,
+		portCount: number,
+		timeout?: number,
+	): Promise<WebSocketBridge> {
+		for (let i = 0; i < portCount; i++) {
+			const port = portStart + i;
+			const bridge = new WebSocketBridge(port, timeout);
+			try {
+				await bridge.start();
+				return bridge;
+			} catch (err: any) {
+				if (err?.code === 'EADDRINUSE') {
+					console.error(`[Bridge] Port ${port} in use, trying next...`);
+					continue;
+				}
+				throw err;
+			}
+		}
+		throw new Error(
+			`All ports in range ${portStart}-${portStart + portCount - 1} are in use. ` +
+			`Cannot start WebSocket server. Set EDA_WS_PORT_RANGE to increase the range.`,
+		);
+	}
+
 	start(): Promise<void> {
 		return new Promise((resolve, reject) => {
 			this.wss = new WebSocketServer({ port: this.port });

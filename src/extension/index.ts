@@ -1,21 +1,22 @@
 import * as extensionConfig from '../../extension.json';
-import { connectToMcpServer, disconnectFromMcpServer } from './ws-client';
-
-let connected = false;
+import { connectToMcpServers, disconnectFromAllMcpServers, getConnectedPortCount } from './ws-client';
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function activate(status?: 'onStartupFinished', arg?: string): void {}
 
 export function connectClaude(): void {
-	if (connected) {
-		eda.sys_Message.showToastMessage('Already connected to Claude MCP Server', ESYS_ToastMessageType.WARNING, 3);
-		return;
+	const alreadyConnected = getConnectedPortCount();
+	if (alreadyConnected > 0) {
+		eda.sys_Message.showToastMessage(
+			`Scanning for new Claude MCP Servers... (${alreadyConnected} already connected)`,
+			ESYS_ToastMessageType.INFO,
+			3,
+		);
+	} else {
+		eda.sys_Message.showToastMessage('Scanning for Claude MCP Servers...', ESYS_ToastMessageType.INFO, 3);
 	}
 	try {
-		eda.sys_Message.showToastMessage('Connecting to Claude MCP Server...', ESYS_ToastMessageType.INFO, 3);
-		connectToMcpServer(extensionConfig.uuid, () => {
-			connected = true;
-		});
+		connectToMcpServers(extensionConfig.uuid);
 	} catch (err: any) {
 		eda.sys_Dialog.showInformationMessage(
 			`Failed to connect: ${err instanceof Error ? err.message : String(err)}\n\nMake sure Claude Code is running with the easyeda-agent MCP server configured.`,
@@ -25,13 +26,17 @@ export function connectClaude(): void {
 }
 
 export function disconnectClaude(): void {
-	if (!connected) {
-		eda.sys_Message.showToastMessage('Not connected to Claude MCP Server', ESYS_ToastMessageType.WARNING, 3);
+	const count = getConnectedPortCount();
+	if (count === 0) {
+		eda.sys_Message.showToastMessage('Not connected to any Claude MCP Servers', ESYS_ToastMessageType.WARNING, 3);
 		return;
 	}
-	disconnectFromMcpServer(extensionConfig.uuid);
-	connected = false;
-	eda.sys_Message.showToastMessage('Disconnected from Claude MCP Server', ESYS_ToastMessageType.INFO, 3);
+	disconnectFromAllMcpServers(extensionConfig.uuid);
+	eda.sys_Message.showToastMessage(
+		`Disconnected from ${count} Claude MCP Server${count === 1 ? '' : 's'}`,
+		ESYS_ToastMessageType.INFO,
+		3,
+	);
 }
 
 export function about(): void {

@@ -11,11 +11,11 @@ import { registerManufactureTools } from './tools/manufacture-tools';
 import { registerPcbDrcTools } from './tools/pcb-drc-tools';
 import { registerPcbLayerTools } from './tools/pcb-layer-tools';
 
-const WS_PORT = Number(process.env.EDA_WS_PORT) || 15168;
+const PORT_RANGE_START = Number(process.env.EDA_WS_PORT) || 15168;
+const PORT_RANGE_SIZE = Number(process.env.EDA_WS_PORT_RANGE) || 10;
 
 async function main() {
-	const bridge = new WebSocketBridge(WS_PORT);
-	await bridge.start();
+	const bridge = await WebSocketBridge.startOnAvailablePort(PORT_RANGE_START, PORT_RANGE_SIZE);
 
 	const server = new McpServer({
 		name: 'easyeda-agent-mcp-server',
@@ -36,7 +36,7 @@ async function main() {
 	await server.connect(transport);
 
 	console.error('[MCP] EasyEDA Agent MCP Server started');
-	console.error(`[MCP] WebSocket Server on port ${WS_PORT}, waiting for EDA Pro Extension...`);
+	console.error(`[MCP] WebSocket Server on port ${bridge.getPort()}, waiting for EDA Pro Extension...`);
 
 	process.on('SIGINT', async () => {
 		await bridge.stop();
