@@ -228,7 +228,7 @@ All types support: primitiveLock`,
 				.describe('Primitive type to modify'),
 			primitiveId: z.string().describe('The primitive ID'),
 			property: z
-				.record(z.any())
+				.record(z.string(), z.any())
 				.describe('Properties to modify (see description for valid keys per type)'),
 		},
 		async ({ type, primitiveId, property }) => {

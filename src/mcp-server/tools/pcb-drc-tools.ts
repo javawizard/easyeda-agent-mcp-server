@@ -72,7 +72,7 @@ export function registerPcbDrcTools(server: McpServer, bridge: WebSocketBridge):
 				])
 				.describe('Action to perform'),
 			configurationName: z.string().optional().describe('Config name'),
-			ruleConfiguration: z.record(z.any()).optional().describe('Rule config object (for save)'),
+			ruleConfiguration: z.record(z.string(), z.any()).optional().describe('Rule config object (for save)'),
 			allowOverwrite: z.boolean().optional().describe('Allow overwrite (for save)'),
 			includeSystem: z.boolean().optional().describe('Include system configs (for get_all)'),
 			originalName: z.string().optional().describe('Current name (for rename)'),
@@ -96,9 +96,9 @@ export function registerPcbDrcTools(server: McpServer, bridge: WebSocketBridge):
 			action: z
 				.enum(['overwrite_net', 'get_net_by_net', 'overwrite_net_by_net', 'get_region', 'overwrite_region'])
 				.describe('Action to perform'),
-			netRules: z.array(z.record(z.any())).optional().describe('Net rules array (for overwrite_net)'),
-			netByNetRules: z.record(z.any()).optional().describe('Net-by-net rules (for overwrite_net_by_net)'),
-			regionRules: z.array(z.record(z.any())).optional().describe('Region rules array (for overwrite_region)'),
+			netRules: z.array(z.record(z.string(), z.any())).optional().describe('Net rules array (for overwrite_net)'),
+			netByNetRules: z.record(z.string(), z.any()).optional().describe('Net-by-net rules (for overwrite_net_by_net)'),
+			regionRules: z.array(z.record(z.string(), z.any())).optional().describe('Region rules array (for overwrite_region)'),
 		},
 		async ({ action, ...params }) => {
 			const result = await bridge.send(NET_RULES_HANDLERS[action], params);
@@ -122,7 +122,7 @@ export function registerPcbDrcTools(server: McpServer, bridge: WebSocketBridge):
 			netClassName: z.string().optional().describe('Net class name'),
 			nets: z.array(z.string()).optional().describe('Net names array (for create)'),
 			net: z.union([z.string(), z.array(z.string())]).optional().describe('Net name(s) (for add_net, remove_net)'),
-			color: z.record(z.any()).optional().describe('Color config (for create)'),
+			color: z.record(z.string(), z.any()).optional().describe('Color config (for create)'),
 			originalName: z.string().optional().describe('Current name (for rename)'),
 			newName: z.string().optional().describe('New name (for rename)'),
 		},
@@ -182,7 +182,7 @@ export function registerPcbDrcTools(server: McpServer, bridge: WebSocketBridge):
 			name: z.string().optional().describe('Group name'),
 			nets: z.array(z.string()).optional().describe('Net names array (for create)'),
 			net: z.union([z.string(), z.array(z.string())]).optional().describe('Net name(s) (for add_net, remove_net)'),
-			color: z.record(z.any()).optional().describe('Color config (for create)'),
+			color: z.record(z.string(), z.any()).optional().describe('Color config (for create)'),
 			originalName: z.string().optional().describe('Current name (for rename)'),
 			newName: z.string().optional().describe('New name (for rename)'),
 		},

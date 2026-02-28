@@ -8,7 +8,7 @@ export function registerSchWriteTools(server: McpServer, bridge: WebSocketBridge
 		'Create a schematic component from a library device reference. Use lib_search_device or lib_get_device first to get the component object.',
 		{
 			component: z
-				.record(z.any())
+				.record(z.string(), z.any())
 				.describe(
 					'Component object from library search/get (ILIB_DeviceItem or ILIB_DeviceSearchItem), or an object with {deviceUuid, libraryUuid}',
 				),
