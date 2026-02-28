@@ -2,7 +2,7 @@ export const pcbPrimitiveHandlers: Record<string, (params: Record<string, any>) 
 	// === Arc ===
 
 	'pcb.getAll.arc': async (params) => {
-		return eda.pcb_PrimitiveArc.getAll(params.net, params.layer);
+		return eda.pcb_PrimitiveArc.getAll(params.net, params.layer, params.primitiveLock);
 	},
 
 	'pcb.get.arc': async (params) => {
@@ -35,7 +35,7 @@ export const pcbPrimitiveHandlers: Record<string, (params: Record<string, any>) 
 	// === Region ===
 
 	'pcb.getAll.region': async (params) => {
-		return eda.pcb_PrimitiveRegion.getAll(params.layer, params.ruleType);
+		return eda.pcb_PrimitiveRegion.getAll(params.layer, params.ruleType, params.primitiveLock);
 	},
 
 	'pcb.get.region': async (params) => {

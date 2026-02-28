@@ -1,6 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { WebSocketBridge } from '../bridge';
+import { queryParams, withQueryParams } from './query-params';
 
 export function registerAnalysisTools(server: McpServer, bridge: WebSocketBridge): void {
 	server.tool(
@@ -81,7 +82,7 @@ export function registerAnalysisTools(server: McpServer, bridge: WebSocketBridge
 	server.tool(
 		'pcb_get_primitives_in_region',
 		'Get all primitives within a rectangular region on the PCB',
-		{
+		withQueryParams({
 			left: z.number().describe('Left boundary X'),
 			right: z.number().describe('Right boundary X'),
 			top: z.number().describe('Top boundary Y'),
@@ -90,10 +91,10 @@ export function registerAnalysisTools(server: McpServer, bridge: WebSocketBridge
 				.boolean()
 				.optional()
 				.describe('true=must be fully inside, false=intersecting also counts'),
-		},
-		async ({ left, right, top, bottom, leftToRight }) => {
+		}),
+		async ({ left, right, top, bottom, leftToRight, fields, filter, limit }) => {
 			const result = await bridge.send('pcb.document.getPrimitivesInRegion', {
-				left, right, top, bottom, leftToRight,
+				left, right, top, bottom, leftToRight, fields, filter, limit,
 			});
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},

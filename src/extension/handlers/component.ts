@@ -1,6 +1,6 @@
 export const componentHandlers: Record<string, (params: Record<string, any>) => Promise<any>> = {
 	'pcb.getAll.component': async (params) => {
-		return eda.pcb_PrimitiveComponent.getAll(params.layer);
+		return eda.pcb_PrimitiveComponent.getAll(params.layer, params.primitiveLock);
 	},
 
 	'pcb.get.component': async (params) => {

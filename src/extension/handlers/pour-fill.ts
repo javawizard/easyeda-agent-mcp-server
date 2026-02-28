@@ -2,7 +2,7 @@ export const pourFillHandlers: Record<string, (params: Record<string, any>) => P
 	// === Pour ===
 
 	'pcb.getAll.pour': async (params) => {
-		return eda.pcb_PrimitivePour.getAll(params.net, params.layer);
+		return eda.pcb_PrimitivePour.getAll(params.net, params.layer, params.primitiveLock);
 	},
 
 	'pcb.get.pour': async (params) => {
@@ -38,7 +38,7 @@ export const pourFillHandlers: Record<string, (params: Record<string, any>) => P
 	// === Fill ===
 
 	'pcb.getAll.fill': async (params) => {
-		return eda.pcb_PrimitiveFill.getAll(params.layer, params.net);
+		return eda.pcb_PrimitiveFill.getAll(params.layer, params.net, params.primitiveLock);
 	},
 
 	'pcb.get.fill': async (params) => {

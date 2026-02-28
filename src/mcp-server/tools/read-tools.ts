@@ -1,6 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { WebSocketBridge } from '../bridge';
+import { queryParams, withQueryParams } from './query-params';
 
 const GET_ALL_HANDLER_MAP: Record<string, string> = {
 	component: 'pcb.getAll.component',
@@ -42,14 +43,19 @@ export function registerReadTools(server: McpServer, bridge: WebSocketBridge): v
 	server.tool(
 		'pcb_get_all_primitives',
 		`Get all primitives of a specific type on the PCB, with optional filters.
-Filters by type: component(layer), track/polyline/arc(net,layer), via(net), pad(layer,net), pour/fill(layer,net), region(layer)`,
-		{
+Filters by type: component(layer), track/polyline/arc(net,layer), via(net), pad(layer,net), pour/fill(layer,net), region(layer).
+Component fields: primitiveId, designator, name, layer, x, y, rotation, primitiveLock, addIntoBom.
+Track fields: primitiveId, net, layer, startX, startY, endX, endY, lineWidth.
+Via fields: primitiveId, net, x, y, holeDiameter, diameter, viaType.
+Pad fields: primitiveId, net, layer, padNumber, x, y.`,
+		withQueryParams({
 			type: z.enum(PRIMITIVE_TYPES).describe('Primitive type to query'),
 			net: z.string().optional().describe('Filter by net name'),
 			layer: z.string().optional().describe('Filter by layer (e.g. "TopLayer", "BottomLayer")'),
-		},
-		async ({ type, net, layer }) => {
-			const result = await bridge.send(GET_ALL_HANDLER_MAP[type], { net, layer });
+			primitiveLock: z.boolean().optional().describe('Filter by lock status (true=locked only, false=unlocked only)'),
+		}),
+		async ({ type, net, layer, primitiveLock, fields, filter, limit }) => {
+			const result = await bridge.send(GET_ALL_HANDLER_MAP[type], { net, layer, primitiveLock, fields, filter, limit });
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);
@@ -57,14 +63,14 @@ Filters by type: component(layer), track/polyline/arc(net,layer), via(net), pad(
 	server.tool(
 		'pcb_get_primitives_by_id',
 		'Get one or more PCB primitives by their type and primitive ID(s)',
-		{
+		withQueryParams({
 			type: z.enum(PRIMITIVE_TYPES).describe('Primitive type'),
 			primitiveIds: z
 				.union([z.string(), z.array(z.string())])
 				.describe('Single primitive ID or array of IDs'),
-		},
-		async ({ type, primitiveIds }) => {
-			const result = await bridge.send(GET_BY_ID_HANDLER_MAP[type], { primitiveIds });
+		}),
+		async ({ type, primitiveIds, fields, filter, limit }) => {
+			const result = await bridge.send(GET_BY_ID_HANDLER_MAP[type], { primitiveIds, fields, filter, limit });
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);
@@ -82,15 +88,15 @@ Filters by type: component(layer), track/polyline/arc(net,layer), via(net), pad(
 	server.tool(
 		'pcb_get_net_primitives',
 		'Get all primitives (tracks, pads, vias, etc.) belonging to a specific net',
-		{
+		withQueryParams({
 			net: z.string().describe('The net name to query'),
 			types: z
 				.array(z.string())
 				.optional()
 				.describe('Filter by primitive types (e.g. ["Line", "Via", "Pad"])'),
-		},
-		async ({ net, types }) => {
-			const result = await bridge.send('pcb.net.getPrimitives', { net, types });
+		}),
+		async ({ net, types, fields, filter, limit }) => {
+			const result = await bridge.send('pcb.net.getPrimitives', { net, types, fields, filter, limit });
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);
@@ -129,12 +135,13 @@ Filters by type: component(layer), track/polyline/arc(net,layer), via(net), pad(
 
 	server.tool(
 		'pcb_get_component_pins',
-		'Get all pins/pads of a specific component by its primitive ID',
-		{
+		`Get all pins/pads of a specific component by its primitive ID.
+Pin fields: primitiveId, padNumber, net, layer, x, y.`,
+		withQueryParams({
 			primitiveId: z.string().describe('The component primitive ID'),
-		},
-		async ({ primitiveId }) => {
-			const result = await bridge.send('pcb.component.getPins', { primitiveId });
+		}),
+		async ({ primitiveId, fields, filter, limit }) => {
+			const result = await bridge.send('pcb.component.getPins', { primitiveId, fields, filter, limit });
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);
@@ -142,13 +149,13 @@ Filters by type: component(layer), track/polyline/arc(net,layer), via(net), pad(
 	server.tool(
 		'pcb_run_drc',
 		'Run Design Rule Check (DRC) on the PCB. Returns violations if verbose is true, or just pass/fail.',
-		{
+		withQueryParams({
 			strict: z.boolean().default(true).describe('Whether to run strict DRC checks'),
 			ui: z.boolean().default(false).describe('Whether to show DRC results in UI'),
 			verbose: z.boolean().default(true).describe('If true, returns detailed violation list'),
-		},
-		async ({ strict, ui, verbose }) => {
-			const result = await bridge.send('pcb.drc.check', { strict, ui, verbose });
+		}),
+		async ({ strict, ui, verbose, fields, filter, limit }) => {
+			const result = await bridge.send('pcb.drc.check', { strict, ui, verbose, fields, filter, limit });
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);
@@ -156,9 +163,9 @@ Filters by type: component(layer), track/polyline/arc(net,layer), via(net), pad(
 	server.tool(
 		'pcb_get_selected',
 		'Get currently selected primitives in the PCB editor',
-		{},
-		async () => {
-			const result = await bridge.send('pcb.select.getAll');
+		withQueryParams({}),
+		async ({ fields, filter, limit }) => {
+			const result = await bridge.send('pcb.select.getAll', { fields, filter, limit });
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);

@@ -1,7 +1,7 @@
 export const trackHandlers: Record<string, (params: Record<string, any>) => Promise<any>> = {
 	// Line
 	'pcb.getAll.line': async (params) => {
-		return eda.pcb_PrimitiveLine.getAll(params.net, params.layer);
+		return eda.pcb_PrimitiveLine.getAll(params.net, params.layer, params.primitiveLock);
 	},
 
 	'pcb.get.line': async (params) => {
@@ -30,7 +30,7 @@ export const trackHandlers: Record<string, (params: Record<string, any>) => Prom
 
 	// Polyline
 	'pcb.getAll.polyline': async (params) => {
-		return eda.pcb_PrimitivePolyline.getAll(params.net, params.layer);
+		return eda.pcb_PrimitivePolyline.getAll(params.net, params.layer, params.primitiveLock);
 	},
 
 	'pcb.get.polyline': async (params) => {

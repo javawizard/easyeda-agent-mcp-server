@@ -1,6 +1,6 @@
 export const viaHandlers: Record<string, (params: Record<string, any>) => Promise<any>> = {
 	'pcb.getAll.via': async (params) => {
-		return eda.pcb_PrimitiveVia.getAll(params.net);
+		return eda.pcb_PrimitiveVia.getAll(params.net, params.primitiveLock);
 	},
 
 	'pcb.get.via': async (params) => {
