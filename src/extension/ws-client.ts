@@ -37,7 +37,7 @@ const allHandlers: Record<string, (params: Record<string, any>) => Promise<any>>
 	...pcbPrimitiveHandlers,
 };
 
-export function connectToMcpServer(extensionUuid: string): void {
+export function connectToMcpServer(extensionUuid: string, onConnected?: () => void): void {
 	eda.sys_WebSocket.register(
 		WS_ID,
 		WS_URL,
@@ -66,9 +66,9 @@ export function connectToMcpServer(extensionUuid: string): void {
 			}
 		},
 		() => {
-			eda.sys_Message.showMessage('Connected to Claude MCP Server');
+			eda.sys_Message.showToastMessage('Connected to Claude MCP Server at ' + WS_URL, 'success' as any, 5);
+			onConnected?.();
 		},
-		extensionUuid,
 	);
 }
 

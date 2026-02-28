@@ -8,15 +8,17 @@ export function activate(status?: 'onStartupFinished', arg?: string): void {}
 
 export function connectClaude(): void {
 	if (connected) {
-		eda.sys_Message.showWarningMessage('Already connected to Claude MCP Server');
+		eda.sys_Message.showToastMessage('Already connected to Claude MCP Server', 'warn' as any, 3);
 		return;
 	}
 	try {
-		connectToMcpServer(extensionConfig.uuid);
-		connected = true;
+		eda.sys_Message.showToastMessage('Connecting to Claude MCP Server...', 'info' as any, 3);
+		connectToMcpServer(extensionConfig.uuid, () => {
+			connected = true;
+		});
 	} catch (err: any) {
-		eda.sys_Dialog.showErrorMessage(
-			`Failed to connect: ${err instanceof Error ? err.message : String(err)}`,
+		eda.sys_Dialog.showInformationMessage(
+			`Failed to connect: ${err instanceof Error ? err.message : String(err)}\n\nMake sure Claude Code is running with the easyeda-agent MCP server configured.`,
 			'Connection Error',
 		);
 	}
@@ -24,12 +26,12 @@ export function connectClaude(): void {
 
 export function disconnectClaude(): void {
 	if (!connected) {
-		eda.sys_Message.showWarningMessage('Not connected to Claude MCP Server');
+		eda.sys_Message.showToastMessage('Not connected to Claude MCP Server', 'warn' as any, 3);
 		return;
 	}
 	disconnectFromMcpServer(extensionConfig.uuid);
 	connected = false;
-	eda.sys_Message.showMessage('Disconnected from Claude MCP Server');
+	eda.sys_Message.showToastMessage('Disconnected from Claude MCP Server', 'info' as any, 3);
 }
 
 export function about(): void {
