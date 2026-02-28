@@ -16,7 +16,7 @@ import { layerHandlers } from './handlers/layer';
 import { pcbPrimitiveHandlers } from './handlers/pcb-primitive';
 
 const PORT_RANGE_START = 15168;
-const PORT_RANGE_SIZE = 10;
+const PORT_RANGE_SIZE = 20;
 
 function wsIdForPort(port: number): string {
 	return `mcp-bridge-${port}`;
