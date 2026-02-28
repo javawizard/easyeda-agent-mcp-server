@@ -22,6 +22,29 @@
 	"entry": "./dist/index",
 	"dependentExtensions": {},
 	"headerMenus": {
+		"sch": [
+			{
+				"id": "ClaudeMCP",
+				"title": "Claude",
+				"menuItems": [
+					{
+						"id": "ConnectClaude",
+						"title": "Connect Claude",
+						"registerFn": "connectClaude"
+					},
+					{
+						"id": "DisconnectClaude",
+						"title": "Disconnect Claude",
+						"registerFn": "disconnectClaude"
+					},
+					{
+						"id": "About",
+						"title": "About...",
+						"registerFn": "about"
+					}
+				]
+			}
+		],
 		"pcb": [
 			{
 				"id": "ClaudeMCP",
