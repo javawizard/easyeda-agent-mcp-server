@@ -14,6 +14,7 @@ import { pourFillHandlers } from './handlers/pour-fill';
 import { manufactureHandlers } from './handlers/manufacture';
 import { layerHandlers } from './handlers/layer';
 import { pcbPrimitiveHandlers } from './handlers/pcb-primitive';
+import { editorHandlers } from './handlers/editor';
 
 const PORT_RANGE_START = 15168;
 const PORT_RANGE_SIZE = 20;
@@ -45,6 +46,7 @@ const allHandlers: Record<string, (params: Record<string, any>) => Promise<any>>
 	...manufactureHandlers,
 	...layerHandlers,
 	...pcbPrimitiveHandlers,
+	...editorHandlers,
 };
 
 function handleMessage(extensionUuid: string, port: number, event: MessageEvent<any>): void {
@@ -58,7 +60,7 @@ function handleMessage(extensionUuid: string, port: number, event: MessageEvent<
 
 		const handler = allHandlers[method];
 		if (!handler) {
-			sendResponse(extensionUuid, port, id!, undefined, `Unknown method: ${method}`);
+			sendResponse(extensionUuid, port, id!, undefined, `Unknown method: ${method}. If you recently updated the MCP server, you may need to reinstall the EasyEDA extension as well.`);
 			return;
 		}
 
