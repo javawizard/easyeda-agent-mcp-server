@@ -1,5 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { z } from 'zod';
 import { WebSocketBridge } from './bridge';
 import { registerReadTools } from './tools/read-tools';
 import { registerWriteTools } from './tools/write-tools';
@@ -21,6 +22,22 @@ async function main() {
 		name: 'easyeda-agent-mcp-server',
 		version: '1.0.0',
 	});
+
+	server.tool(
+		'server_info',
+		'Get MCP server status: WebSocket port, connection state, and allowed origins',
+		{},
+		async () => ({
+			content: [{
+				type: 'text' as const,
+				text: JSON.stringify({
+					wsPort: bridge.getPort(),
+					extensionConnected: bridge.isConnected(),
+					allowAllOrigins: process.env.EDA_WS_ALLOW_ALL_ORIGINS === '1',
+				}, null, 2),
+			}],
+		}),
+	);
 
 	registerReadTools(server, bridge);
 	registerWriteTools(server, bridge);

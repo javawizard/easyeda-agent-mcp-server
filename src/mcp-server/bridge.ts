@@ -1,4 +1,16 @@
 import { WebSocketServer, WebSocket } from 'ws';
+import type { IncomingMessage } from 'http';
+
+const ALLOWED_ORIGIN_PATTERNS = [
+	/^https?:\/\/([a-z0-9-]+\.)*easyeda\.com(:\d+)?$/,
+	/^https?:\/\/([a-z0-9-]+\.)*lceda\.cn(:\d+)?$/,
+];
+
+function isAllowedOrigin(origin: string | undefined): boolean {
+	if (!origin) return false;
+	if (process.env.EDA_WS_ALLOW_ALL_ORIGINS === '1') return true;
+	return ALLOWED_ORIGIN_PATTERNS.some((pattern) => pattern.test(origin));
+}
 
 export interface BridgeRequest {
 	id: string;
@@ -60,7 +72,17 @@ export class WebSocketBridge {
 
 	start(): Promise<void> {
 		return new Promise((resolve, reject) => {
-			this.wss = new WebSocketServer({ port: this.port });
+			this.wss = new WebSocketServer({
+				port: this.port,
+				host: '127.0.0.1',
+				verifyClient: (info: { origin: string; req: IncomingMessage; secure: boolean }) => {
+					if (isAllowedOrigin(info.origin)) {
+						return true;
+					}
+					console.error(`[Bridge] Rejected WebSocket connection from origin: ${info.origin || '(none)'}`);
+					return false;
+				},
+			});
 
 			this.wss.on('listening', () => {
 				console.error(`[Bridge] WebSocket Server listening on port ${this.port}`);
