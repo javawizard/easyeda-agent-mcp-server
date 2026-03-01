@@ -7,7 +7,8 @@ export function registerSchReadTools(server: McpServer, bridge: WebSocketBridge)
 	server.tool(
 		'sch_get_all_components',
 		`Get all components in the schematic with their properties, positions, rotations, designators, etc.
-Fields: primitiveId, componentType, designator, name, x, y, rotation, mirror, addIntoBom, addIntoPcb, footprint, manufacturer, net, otherProperty.`,
+Fields: primitiveId, componentType, designator, name, x, y, rotation, mirror, addIntoBom, addIntoPcb, footprint, manufacturer, net, otherProperty.
+Note: name often contains EasyEDA template expressions like ={Manufacturer Part} rather than resolved values. For resolved names, use sch_get_connectivity.`,
 		withQueryParams({
 			componentType: z
 				.enum(['part', 'sheet', 'netflag', 'netport', 'nonElectrical_symbol', 'short_symbol', 'netlabel'])
@@ -41,7 +42,8 @@ Fields: primitiveId, componentType, designator, name, x, y, rotation, mirror, ad
 	server.tool(
 		'sch_get_component_pins',
 		`Get all pins of a schematic component by its primitive ID.
-Pin fields: primitiveId, pinNumber, name, net, x, y, rotation.`,
+Pin fields: primitiveId, pinNumber, name, net, x, y, rotation.
+Each pin includes a net field with the net name it is connected to (empty string if unconnected).`,
 		withQueryParams({
 			primitiveId: z.string().describe('The component primitive ID'),
 		}),
@@ -138,7 +140,9 @@ Pin fields: primitiveId, pinNumber, name, net, x, y, rotation.`,
 
 	server.tool(
 		'sch_get_netlist',
-		'Get the schematic netlist in the specified format',
+		`Get the raw schematic netlist in the specified format. WARNING: The JLCEDA format response is very large (100KB+).
+Prefer sch_get_connectivity for connectivity questions — it returns the same net/pin data in a much more compact format with resolved part names.
+Only use this tool when you need a specific netlist export format (Allegro, PADS, etc.) or the full raw netlist data.`,
 		withQueryParams({
 			type: z
 				.enum(['Allegro', 'PADS', 'Protel2', 'JLCEDA', 'EasyEDA', 'DISA'])
@@ -147,6 +151,28 @@ Pin fields: primitiveId, pinNumber, name, net, x, y, rotation.`,
 		}),
 		async ({ type, fields, filter, limit }) => {
 			const result = await bridge.send('sch.netlist.get', { type, fields, filter, limit });
+			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+		},
+	);
+
+	server.tool(
+		'sch_get_connectivity',
+		`Get compact connectivity data: which nets connect which component pins, with resolved part names.
+Much smaller than sch_get_netlist — use this for connectivity questions.
+Returns nets (net → pin connections like "U3.2(GND)") and components (designator → part + pin assignments).
+Auto-generated net names (starting with $) are hidden from the nets view but shown in component pin assignments.`,
+		{
+			designators: z
+				.array(z.string())
+				.optional()
+				.describe('Only include these components and nets touching them (e.g. ["U3", "U8"])'),
+			nets: z
+				.array(z.string())
+				.optional()
+				.describe('Only include these nets and components touching them (e.g. ["GND", "VBUS"])'),
+		},
+		async ({ designators, nets }) => {
+			const result = await bridge.send('sch.connectivity.get', { designators, nets });
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);

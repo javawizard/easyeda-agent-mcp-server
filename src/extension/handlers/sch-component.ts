@@ -1,3 +1,5 @@
+import { fetchParsedNetlist } from './sch-netlist-utils';
+
 export const schComponentHandlers: Record<string, (params: Record<string, any>) => Promise<any>> = {
 	'sch.component.create': async (params) => {
 		return eda.sch_PrimitiveComponent.create(
@@ -51,6 +53,21 @@ export const schComponentHandlers: Record<string, (params: Record<string, any>) 
 	},
 
 	'sch.component.getAllPins': async (params) => {
-		return eda.sch_PrimitiveComponent.getAllPinsByPrimitiveId(params.primitiveId);
+		const pins = await eda.sch_PrimitiveComponent.getAllPinsByPrimitiveId(params.primitiveId);
+		if (!Array.isArray(pins) || pins.length === 0) return pins;
+
+		// Look up the component's uniqueId, then find its nets in the netlist
+		const rawComp: any = await eda.sch_PrimitiveComponent.get(params.primitiveId);
+		const comp = Array.isArray(rawComp) ? rawComp[0] : rawComp;
+		if (!comp?.uniqueId) return pins;
+
+		const netlist = await fetchParsedNetlist();
+		const netEntry = netlist[comp.uniqueId];
+		if (!netEntry) return pins;
+
+		return pins.map((pin: any) => ({
+			...pin,
+			net: netEntry.pins[String(pin.pinNumber)] ?? '',
+		}));
 	},
 };
