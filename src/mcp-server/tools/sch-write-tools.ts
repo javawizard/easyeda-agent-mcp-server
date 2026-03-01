@@ -175,7 +175,7 @@ export function registerSchWriteTools(server: McpServer, bridge: WebSocketBridge
 
 	server.tool(
 		'sch_select_primitives',
-		'Select primitives in the schematic editor by their IDs',
+		'Select primitives in the schematic editor by their IDs. Note: doSelectPrimitives may not visually update; prefer sch_cross_probe_select for reliable selection.',
 		{
 			primitiveIds: z
 				.union([z.string(), z.array(z.string())])
@@ -183,6 +183,45 @@ export function registerSchWriteTools(server: McpServer, bridge: WebSocketBridge
 		},
 		async ({ primitiveIds }) => {
 			const result = await bridge.send('sch.select.select', { primitiveIds });
+			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+		},
+	);
+
+	server.tool(
+		'sch_cross_probe_select',
+		`Cross-probe select in the schematic editor by designators, pins, or nets.
+This is the more reliable selection method — it highlights and selects components visually.
+Pin format: "U1_1" (designator_pinNumber).`,
+		{
+			components: z
+				.array(z.string())
+				.optional()
+				.describe('Component designators to select (e.g. ["U3", "U13"])'),
+			pins: z
+				.array(z.string())
+				.optional()
+				.describe('Pins to select as designator_pinNumber (e.g. ["U3_1", "U3_2"])'),
+			nets: z
+				.array(z.string())
+				.optional()
+				.describe('Net names to select (e.g. ["GND", "VBUS"])'),
+			highlight: z
+				.boolean()
+				.optional()
+				.describe('Whether to highlight the selection (default: true)'),
+			select: z
+				.boolean()
+				.optional()
+				.describe('Whether to select the primitives (default: true)'),
+		},
+		async ({ components, pins, nets, highlight, select }) => {
+			const result = await bridge.send('sch.select.crossProbe', {
+				components,
+				pins,
+				nets,
+				highlight: highlight ?? true,
+				select: select ?? true,
+			});
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);
