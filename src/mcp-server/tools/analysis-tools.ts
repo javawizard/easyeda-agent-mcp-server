@@ -29,6 +29,16 @@ export function registerAnalysisTools(server: McpServer, bridge: WebSocketBridge
 	);
 
 	server.tool(
+		'pcb_clear_selection',
+		'Clear all selection in the PCB editor',
+		{},
+		async () => {
+			const result = await bridge.send('pcb.select.clear');
+			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+		},
+	);
+
+	server.tool(
 		'pcb_navigate_to',
 		'Navigate the PCB editor viewport to specific coordinates',
 		{

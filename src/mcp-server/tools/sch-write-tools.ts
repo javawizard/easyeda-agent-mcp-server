@@ -175,23 +175,9 @@ export function registerSchWriteTools(server: McpServer, bridge: WebSocketBridge
 
 	server.tool(
 		'sch_select_primitives',
-		'Select primitives in the schematic editor by their IDs. Note: doSelectPrimitives may not visually update; prefer sch_cross_probe_select for reliable selection.',
-		{
-			primitiveIds: z
-				.union([z.string(), z.array(z.string())])
-				.describe('Single primitive ID or array of primitive IDs to select'),
-		},
-		async ({ primitiveIds }) => {
-			const result = await bridge.send('sch.select.select', { primitiveIds });
-			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-		},
-	);
-
-	server.tool(
-		'sch_cross_probe_select',
-		`Cross-probe select in the schematic editor by designators, pins, or nets.
-This is the more reliable selection method — it highlights and selects components visually.
-Pin format: "U1_1" (designator_pinNumber).`,
+		`Select and highlight primitives in the schematic editor by designators, pins, or nets.
+Selection is additive — each call adds to the current selection. There is currently no programmatic way to clear the selection; the user must click on empty space in the editor to deselect.
+Pin format: "U1_1" (designator_pinNumber). Components selects the whole component, pins highlights just the pin, nets highlights the entire wire/net.`,
 		{
 			components: z
 				.array(z.string())
@@ -205,33 +191,15 @@ Pin format: "U1_1" (designator_pinNumber).`,
 				.array(z.string())
 				.optional()
 				.describe('Net names to select (e.g. ["GND", "VBUS"])'),
-			highlight: z
-				.boolean()
-				.optional()
-				.describe('Whether to highlight the selection (default: true)'),
-			select: z
-				.boolean()
-				.optional()
-				.describe('Whether to select the primitives (default: true)'),
 		},
-		async ({ components, pins, nets, highlight, select }) => {
+		async ({ components, pins, nets }) => {
 			const result = await bridge.send('sch.select.crossProbe', {
 				components,
 				pins,
 				nets,
-				highlight: highlight ?? true,
-				select: select ?? true,
+				highlight: true,
+				select: true,
 			});
-			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-		},
-	);
-
-	server.tool(
-		'sch_clear_selection',
-		'Clear all selection in the schematic editor',
-		{},
-		async () => {
-			const result = await bridge.send('sch.select.clear');
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);

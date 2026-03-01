@@ -57,6 +57,10 @@ export const documentHandlers: Record<string, (params: Record<string, any>) => P
 		return eda.pcb_SelectControl.getAllSelectedPrimitives();
 	},
 
+	'pcb.select.clear': async () => {
+		return eda.pcb_SelectControl.clearSelected();
+	},
+
 	// === Pad ===
 
 	'pcb.getAll.pad': async (params) => {
