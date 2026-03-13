@@ -19,10 +19,19 @@ const PORT_RANGE_SIZE = Number(process.env.EDA_WS_PORT_RANGE) || 20;
 async function main() {
 	const bridge = await WebSocketBridge.startOnAvailablePort(PORT_RANGE_START, PORT_RANGE_SIZE);
 
-	const server = new McpServer({
-		name: 'easyeda-agent-mcp-server',
-		version: '1.0.0',
-	});
+	const server = new McpServer(
+		{
+			name: 'easyeda-agent-mcp-server',
+			version: '1.0.0',
+		},
+		{
+			instructions: [
+				'This server provides direct access to schematic and PCB designs in EasyEDA Pro.',
+				'When the user asks about their circuit designs, schematics, PCB layouts, components, footprints, or netlist connections, check this server in addition to (or instead of) searching the filesystem for design files.',
+				'Start with `server_info` to check connectivity, then use `editor_get_open_tabs` or `project_get_structure` to discover what designs are available.',
+			].join(' '),
+		},
+	);
 
 	server.tool(
 		'server_info',
