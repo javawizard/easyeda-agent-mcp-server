@@ -116,6 +116,31 @@ const allHandlers: Record<string, (params: Record<string, any>) => Promise<any>>
 	...editorHandlers,
 };
 
+async function requireDocumentType(method: string): Promise<void> {
+	const requiresPcb = method.startsWith('pcb.');
+	const requiresSch = method.startsWith('sch.');
+	if (!requiresPcb && !requiresSch) return;
+
+	const doc = await eda.dmt_SelectControl.getCurrentDocumentInfo();
+	const docType = doc?.documentType;
+
+	if (requiresPcb && docType !== 3) {
+		const current =
+			docType === 1 ? ' (a schematic is currently open)' : docType != null ? '' : ' (no document is open)';
+		throw new Error(
+			`This tool requires a PCB document, but the currently active tab is not a PCB${current}. Use editor_open_document to switch to a PCB document and try again.`,
+		);
+	}
+
+	if (requiresSch && docType !== 1) {
+		const current =
+			docType === 3 ? ' (a PCB is currently open)' : docType != null ? '' : ' (no document is open)';
+		throw new Error(
+			`This tool requires a schematic document, but the currently active tab is not a schematic${current}. Use editor_open_document to switch to a schematic document and try again.`,
+		);
+	}
+}
+
 function handleMessage(extensionUuid: string, port: number, event: MessageEvent<any>): void {
 	let id: string | undefined;
 	try {
@@ -135,8 +160,15 @@ function handleMessage(extensionUuid: string, port: number, event: MessageEvent<
 			return;
 		}
 
-		handler(handlerParams).then(
-			(result) => sendResponse(extensionUuid, port, id!, applyQueryParams(result, qp)),
+		requireDocumentType(method).then(
+			() =>
+				handler(handlerParams).then(
+					(result) => sendResponse(extensionUuid, port, id!, applyQueryParams(result, qp)),
+					(err: any) => {
+						const errorMsg = err instanceof Error ? err.message : String(err);
+						sendResponse(extensionUuid, port, id!, undefined, errorMsg);
+					},
+				),
 			(err: any) => {
 				const errorMsg = err instanceof Error ? err.message : String(err);
 				sendResponse(extensionUuid, port, id!, undefined, errorMsg);
@@ -165,6 +197,22 @@ function sendResponse(extensionUuid: string, port: number, id: string, result?: 
 	}
 }
 
+let pendingConnectionPorts: number[] = [];
+let connectionToastTimer: ReturnType<typeof setTimeout> | null = null;
+
+function flushConnectionToast(): void {
+	if (pendingConnectionPorts.length === 0) return;
+	const ports = pendingConnectionPorts;
+	pendingConnectionPorts = [];
+	connectionToastTimer = null;
+	const portList = ports.map(String).join(', ');
+	const msg =
+		ports.length === 1
+			? `Connected to Claude MCP Server on port ${portList}`
+			: `Connected to ${ports.length} Claude MCP Servers on ports ${portList}`;
+	eda.sys_Message.showToastMessage(msg, ESYS_ToastMessageType.SUCCESS, 5);
+}
+
 export function connectToMcpServers(extensionUuid: string): void {
 	for (let i = 0; i < PORT_RANGE_SIZE; i++) {
 		const port = PORT_RANGE_START + i;
@@ -179,11 +227,11 @@ export function connectToMcpServers(extensionUuid: string): void {
 			(event: MessageEvent<any>) => handleMessage(extensionUuid, port, event),
 			() => {
 				connectedPorts.add(port);
-				eda.sys_Message.showToastMessage(
-					`Connected to Claude MCP Server on port ${port}`,
-					ESYS_ToastMessageType.SUCCESS,
-					5,
-				);
+				pendingConnectionPorts.push(port);
+				if (connectionToastTimer !== null) {
+					clearTimeout(connectionToastTimer);
+				}
+				connectionToastTimer = setTimeout(flushConnectionToast, 500);
 			},
 		);
 	}

@@ -5,15 +5,15 @@ import type { WebSocketBridge } from '../bridge';
 export function registerSchWriteTools(server: McpServer, bridge: WebSocketBridge): void {
 	server.tool(
 		'sch_create_component',
-		'Create a schematic component from a library device reference. Use lib_search_device or lib_get_device first to get the component object.',
+		'Create a schematic component from a library device reference. Use lib_search_device or lib_get_device_by_lcsc first to get the component object. IMPORTANT: The component object must include uuid, symbolUuid, footprintUuid, AND libraryUuid — passing only {deviceUuid, libraryUuid} will fail with a validation error. Pass the full object returned by lib_get_device_by_lcsc with libraryUuid added (from lib_get_system_library_uuid).',
 		{
 			component: z
 				.record(z.string(), z.any())
 				.describe(
-					'Component object from library search/get (ILIB_DeviceItem or ILIB_DeviceSearchItem), or an object with {deviceUuid, libraryUuid}',
+					'Full component object including uuid, symbolUuid, footprintUuid, and libraryUuid. Get the base object from lib_get_device_by_lcsc or lib_search_device, then add libraryUuid from lib_get_system_library_uuid. Passing only {deviceUuid, libraryUuid} will fail.',
 				),
-			x: z.number().describe('X coordinate for placement'),
-			y: z.number().describe('Y coordinate for placement'),
+			x: z.number().describe('X coordinate for placement (X axis points rightward — higher values = further right)'),
+			y: z.number().describe('Y coordinate for placement (Y axis points upward — higher values = higher on screen)'),
 			subPartName: z.string().optional().describe('Sub-part name for multi-part components'),
 			rotation: z.number().optional().describe('Rotation angle in degrees'),
 			mirror: z.boolean().optional().describe('Whether to mirror the component'),
@@ -34,8 +34,8 @@ export function registerSchWriteTools(server: McpServer, bridge: WebSocketBridge
 				.enum(['Power', 'Ground', 'AnalogGround', 'ProtectGround'])
 				.describe('Net flag type'),
 			net: z.string().describe('Net name (e.g. "VCC", "GND", "3V3")'),
-			x: z.number().describe('X coordinate'),
-			y: z.number().describe('Y coordinate'),
+			x: z.number().describe('X coordinate (X axis points rightward — higher values = further right)'),
+			y: z.number().describe('Y coordinate (Y axis points upward — higher values = higher on screen)'),
 			rotation: z.number().optional().describe('Rotation angle in degrees'),
 			mirror: z.boolean().optional().describe('Whether to mirror'),
 		},
