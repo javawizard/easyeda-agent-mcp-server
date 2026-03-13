@@ -19,6 +19,27 @@ import { editorHandlers } from './handlers/editor';
 const PORT_RANGE_START = 15168;
 const PORT_RANGE_SIZE = 20;
 
+// Generate a random 8-character hex instance ID for this tab.
+// Stored on globalThis so it survives extension IIFE re-evaluations
+// but is unique per browser tab/context.
+const GLOBAL_KEY = '__claude_mcp_instance_id__';
+
+function getOrCreateInstanceId(): string {
+	const g = globalThis as any;
+	if (!g[GLOBAL_KEY]) {
+		const bytes = new Uint8Array(4);
+		crypto.getRandomValues(bytes);
+		g[GLOBAL_KEY] = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+	}
+	return g[GLOBAL_KEY];
+}
+
+const instanceId = getOrCreateInstanceId();
+
+export function getInstanceId(): string {
+	return instanceId;
+}
+
 interface QueryParams {
 	fields?: string[];
 	filter?: Record<string, string | number | boolean | string[]>;
@@ -91,10 +112,11 @@ function wsIdForPort(port: number): string {
 }
 
 function wsUrlForPort(port: number): string {
-	return `ws://localhost:${port}`;
+	return `ws://localhost:${port}?instanceId=${instanceId}`;
 }
 
-const connectedPorts = new Set<number>();
+const PORTS_KEY = '__claude_mcp_connected_ports__';
+const connectedPorts: Set<number> = (globalThis as any)[PORTS_KEY] || ((globalThis as any)[PORTS_KEY] = new Set<number>());
 
 const allHandlers: Record<string, (params: Record<string, any>) => Promise<any>> = {
 	...componentHandlers,
@@ -115,6 +137,51 @@ const allHandlers: Record<string, (params: Record<string, any>) => Promise<any>>
 	...pcbPrimitiveHandlers,
 	...editorHandlers,
 };
+
+async function getInstanceInfo(): Promise<Record<string, any>> {
+	const DOC_TYPE_NAMES: Record<number, string> = { 1: 'schematic', 3: 'pcb' };
+
+	try {
+		const [project, currentDoc, tree] = await Promise.all([
+			eda.dmt_Project.getCurrentProjectInfo(),
+			eda.dmt_SelectControl.getCurrentDocumentInfo(),
+			eda.dmt_EditorControl.getSplitScreenTree(),
+		]);
+
+		const documents: Array<{ title: string; uuid: string }> = [];
+		if (tree) {
+			(function collectTabs(node: any): void {
+				if (node.tabs) {
+					for (const tab of node.tabs) {
+						documents.push({ title: tab.title, uuid: tab.tabId });
+					}
+				}
+				if (node.children) {
+					for (const child of node.children) {
+						collectTabs(child);
+					}
+				}
+			})(tree);
+		}
+
+		// Runtime API returns more fields than the type declarations expose
+		const proj = project as any;
+		const doc = currentDoc as any;
+
+		return {
+			instanceId,
+			projectName: proj?.name ?? proj?.title,
+			currentDocument: doc?.tabId,
+			documentType: doc?.documentType != null ? (DOC_TYPE_NAMES[doc.documentType] || `type_${doc.documentType}`) : undefined,
+			documents,
+		};
+	} catch {
+		return { instanceId };
+	}
+}
+
+// Register the instance.getInfo handler alongside other handlers
+allHandlers['instance.getInfo'] = async () => getInstanceInfo();
 
 async function requireDocumentType(method: string): Promise<void> {
 	const requiresPcb = method.startsWith('pcb.');
@@ -197,6 +264,25 @@ function sendResponse(extensionUuid: string, port: number, id: string, result?: 
 	}
 }
 
+function sendNotification(extensionUuid: string, port: number, type: string, data: any): void {
+	try {
+		eda.sys_WebSocket.send(wsIdForPort(port), JSON.stringify({ type, data }), extensionUuid);
+	} catch {
+		connectedPorts.delete(port);
+	}
+}
+
+/**
+ * Push updated instance info to all connected MCP servers.
+ * Called when the active document changes, etc.
+ */
+async function pushInstanceInfoToAll(extensionUuid: string): Promise<void> {
+	const info = await getInstanceInfo();
+	for (const port of connectedPorts) {
+		sendNotification(extensionUuid, port, 'instanceInfo', info);
+	}
+}
+
 let pendingConnectionPorts: number[] = [];
 let connectionToastTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -208,12 +294,16 @@ function flushConnectionToast(): void {
 	const portList = ports.map(String).join(', ');
 	const msg =
 		ports.length === 1
-			? `Connected to Claude MCP Server on port ${portList}`
-			: `Connected to ${ports.length} Claude MCP Servers on ports ${portList}`;
+			? `Connected to Claude MCP Server on port ${portList} (instance: ${instanceId})`
+			: `Connected to ${ports.length} Claude MCP Servers on ports ${portList} (instance: ${instanceId})`;
 	eda.sys_Message.showToastMessage(msg, ESYS_ToastMessageType.SUCCESS, 5);
 }
 
+let noNewServersTimer: ReturnType<typeof setTimeout> | null = null;
+
 export function connectToMcpServers(extensionUuid: string): void {
+	const countBefore = connectedPorts.size;
+
 	for (let i = 0; i < PORT_RANGE_SIZE; i++) {
 		const port = PORT_RANGE_START + i;
 		if (connectedPorts.has(port)) {
@@ -232,8 +322,35 @@ export function connectToMcpServers(extensionUuid: string): void {
 					clearTimeout(connectionToastTimer);
 				}
 				connectionToastTimer = setTimeout(flushConnectionToast, 500);
+
+				// Cancel the "no new servers" toast since we found one
+				if (noNewServersTimer !== null) {
+					clearTimeout(noNewServersTimer);
+					noNewServersTimer = null;
+				}
+
+				// Push instance info to the newly connected server after a short delay
+				// (give the server a moment to finish its connection setup)
+				setTimeout(() => pushInstanceInfoToAll(extensionUuid), 200);
 			},
 		);
+	}
+
+	// If no new connections arrive within 2s, show a "no new servers" toast
+	if (countBefore > 0) {
+		if (noNewServersTimer !== null) {
+			clearTimeout(noNewServersTimer);
+		}
+		noNewServersTimer = setTimeout(() => {
+			noNewServersTimer = null;
+			if (connectedPorts.size === countBefore) {
+				eda.sys_Message.showToastMessage(
+					`No new servers found (${countBefore} already connected)`,
+					ESYS_ToastMessageType.INFO,
+					3,
+				);
+			}
+		}, 2000);
 	}
 }
 

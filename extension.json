@@ -1,6 +1,6 @@
 {
 	"name": "easyeda-agent-mcp-server",
-	"uuid": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
+	"uuid": "0d3d35b927d9451ba42c527576079161",
 	"displayName": "EasyEDA Agent",
 	"description": "MCP Bridge - Connect Claude Code to EasyEDA Pro",
 	"version": "1.0.0",

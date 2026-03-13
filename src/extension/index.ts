@@ -1,5 +1,5 @@
 import * as extensionConfig from '../../extension.json';
-import { connectToMcpServers, disconnectFromAllMcpServers, getConnectedPortCount } from './ws-client';
+import { connectToMcpServers, disconnectFromAllMcpServers, getConnectedPortCount, getInstanceId } from './ws-client';
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function activate(status?: 'onStartupFinished', arg?: string): void {}
@@ -39,9 +39,25 @@ export function disconnectClaude(): void {
 	);
 }
 
-export function about(): void {
-	eda.sys_Dialog.showInformationMessage(
-		`EasyEDA Agent - MCP Bridge for Claude Code\nVersion ${extensionConfig.version}`,
-		'About',
-	);
+export async function about(): Promise<void> {
+	// Get current theme so the dialog can match
+	let theme = 'light';
+	try {
+		theme = await eda.sys_System.getCurrentTheme();
+	} catch {
+		// Default to light if API unavailable
+	}
+
+	// Set data on globalThis for the iframe to read
+	(globalThis as any).__claude_about_data__ = {
+		instanceId: getInstanceId(),
+		version: extensionConfig.version,
+		connectedPorts: getConnectedPortCount(),
+		theme,
+	};
+
+	eda.sys_IFrame.openIFrame('pages/about.html', 380, 370, 'claude-about', {
+		title: 'About EasyEDA Agent',
+		grayscaleMask: true,
+	});
 }

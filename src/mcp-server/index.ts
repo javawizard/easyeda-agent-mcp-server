@@ -26,18 +26,67 @@ async function main() {
 
 	server.tool(
 		'server_info',
-		'Get MCP server status: WebSocket port, connection state, and allowed origins',
+		'Get MCP server status: WebSocket port, connection state, connected instances, and allowed origins',
 		{},
-		async () => ({
-			content: [{
-				type: 'text' as const,
-				text: JSON.stringify({
-					wsPort: bridge.getPort(),
-					extensionConnected: bridge.isConnected(),
-					allowAllOrigins: process.env.EDA_WS_ALLOW_ALL_ORIGINS === '1',
-				}, null, 2),
-			}],
-		}),
+		async () => {
+			const instances = bridge.getConnectedInstances();
+			return {
+				content: [{
+					type: 'text' as const,
+					text: JSON.stringify({
+						wsPort: bridge.getPort(),
+						extensionConnected: bridge.isConnected(),
+						connectedInstanceCount: instances.length,
+						instances: instances.map((info) => ({
+							instanceId: info.instanceId,
+							projectName: info.projectName,
+							currentDocument: info.currentDocument,
+							documentType: info.documentType,
+						})),
+						allowAllOrigins: process.env.EDA_WS_ALLOW_ALL_ORIGINS === '1',
+					}, null, 2),
+				}],
+			};
+		},
+	);
+
+	server.tool(
+		'list_instances',
+		'List all connected EasyEDA Pro instances with their current state (project, active document, open tabs). Use this to find the instance_id you need for other tools when multiple instances are connected.',
+		{},
+		async () => {
+			await bridge.refreshAllInstanceInfo();
+			const instances = bridge.getConnectedInstances();
+
+			if (instances.length === 0) {
+				return {
+					content: [{
+						type: 'text' as const,
+						text: 'No EasyEDA Pro instances are connected. Please open EasyEDA Pro and click "Connect Claude" in the Claude menu.',
+					}],
+				};
+			}
+
+			return {
+				content: [{
+					type: 'text' as const,
+					text: JSON.stringify({
+						connectedInstanceCount: instances.length,
+						instances: instances.map((info) => ({
+							instanceId: info.instanceId,
+							projectName: info.projectName,
+							currentDocument: info.currentDocument,
+							documentType: info.documentType,
+							documents: info.documents,
+							connectedAt: new Date(info.connectedAt).toISOString(),
+						})),
+						note: instances.length === 1
+							? 'Only one instance connected — instance_id can be omitted from tool calls (auto-selected).'
+							: 'Multiple instances connected — pass instance_id to tool calls to target a specific instance.',
+					}, null, 2),
+				}],
+			};
+		},
 	);
 
 	registerReadTools(server, bridge);

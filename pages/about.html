@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>About EasyEDA Agent</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Outfit:wght@300;400;500;600&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    /* Light theme (default) */
+    --bg: #f5f3f0;
+    --bg-subtle: #e8e5e0;
+    --bg-card: #ffffff;
+    --card-border: rgba(0,0,0,0.08);
+    --copper: #a06b3a;
+    --copper-bright: #8b5a2b;
+    --copper-dim: #c4956a;
+    --silk: #2a2520;
+    --silk-dim: #7a756e;
+    --green-a: #3a6b50;
+    --green-b: #4d8a66;
+    --success: #3a8a55;
+    --trace-opacity: 0.06;
+    --grid-color: rgba(0,0,0,0.04);
+    --chip-border: rgba(160, 107, 58, 0.25);
+    --chip-border-hover: rgba(160, 107, 58, 0.45);
+    --chip-divider: rgba(160, 107, 58, 0.15);
+    --copy-hover-bg: rgba(160, 107, 58, 0.08);
+    --copy-active-bg: rgba(160, 107, 58, 0.14);
+    --info-bg: rgba(0,0,0,0.025);
+    --info-border: rgba(0,0,0,0.05);
+    --logo-shadow: 0 4px 12px rgba(0,0,0,0.12);
+    --font-display: 'Outfit', sans-serif;
+    --font-mono: 'DM Mono', monospace;
+  }
+
+  :root.dark {
+    --bg: #1a1d23;
+    --bg-subtle: #21252b;
+    --bg-card: #282c34;
+    --card-border: rgba(255,255,255,0.06);
+    --copper: #d4956a;
+    --copper-bright: #e8ad7a;
+    --copper-dim: #a06b42;
+    --silk: #e8e4df;
+    --silk-dim: #9a9590;
+    --green-a: #2a4a3a;
+    --green-b: #3d6b52;
+    --success: #5cb87a;
+    --trace-opacity: 0.08;
+    --grid-color: rgba(255,255,255,0.025);
+    --chip-border: rgba(212, 149, 106, 0.2);
+    --chip-border-hover: rgba(212, 149, 106, 0.4);
+    --chip-divider: rgba(212, 149, 106, 0.15);
+    --copy-hover-bg: rgba(212, 149, 106, 0.08);
+    --copy-active-bg: rgba(212, 149, 106, 0.15);
+    --info-bg: rgba(255,255,255,0.02);
+    --info-border: rgba(255,255,255,0.04);
+    --logo-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  }
+
+  body {
+    font-family: var(--font-display);
+    background: var(--bg);
+    color: var(--silk);
+    height: 100vh;
+    overflow: hidden;
+    position: relative;
+  }
+
+  /* Subtle grid pattern */
+  body::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+      linear-gradient(90deg, transparent 49.5%, var(--grid-color) 49.5%, var(--grid-color) 50.5%, transparent 50.5%) 0 0 / 40px 40px,
+      linear-gradient(0deg, transparent 49.5%, var(--grid-color) 49.5%, var(--grid-color) 50.5%, transparent 50.5%) 0 0 / 40px 40px;
+    opacity: 0.7;
+    pointer-events: none;
+  }
+
+  /* Decorative copper traces */
+  .trace {
+    position: absolute;
+    background: var(--copper-dim);
+    opacity: var(--trace-opacity);
+    border-radius: 1px;
+  }
+  .trace-h1 { width: 120px; height: 2px; top: 30px; left: -20px; transform: rotate(-5deg); }
+  .trace-h2 { width: 80px; height: 2px; bottom: 50px; right: -10px; transform: rotate(3deg); }
+  .trace-v1 { width: 2px; height: 90px; top: 60px; right: 50px; }
+  .trace-v2 { width: 2px; height: 60px; bottom: 20px; left: 40px; transform: rotate(-2deg); }
+  .trace-dot1 { width: 6px; height: 6px; border-radius: 50%; top: 28px; left: 98px; }
+  .trace-dot2 { width: 6px; height: 6px; border-radius: 50%; bottom: 48px; right: 68px; }
+
+  .container {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 32px 28px 24px;
+    height: 100%;
+  }
+
+  .logo-mark {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, var(--green-a), var(--green-b));
+    border: 2px solid var(--copper-dim);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 16px;
+    box-shadow: var(--logo-shadow);
+    animation: fadeIn 0.4s ease-out;
+  }
+  .logo-mark svg {
+    width: 26px;
+    height: 26px;
+    color: var(--copper-bright);
+  }
+  .dark .logo-mark svg {
+    color: var(--copper-bright);
+  }
+
+  .title {
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: -0.3px;
+    color: var(--silk);
+    margin-bottom: 2px;
+    animation: fadeIn 0.4s ease-out 0.05s both;
+  }
+
+  .subtitle {
+    font-size: 12px;
+    font-weight: 300;
+    color: var(--silk-dim);
+    letter-spacing: 0.5px;
+    margin-bottom: 24px;
+    animation: fadeIn 0.4s ease-out 0.1s both;
+  }
+
+  /* Instance ID chip */
+  .chip-container {
+    width: 100%;
+    animation: fadeIn 0.4s ease-out 0.15s both;
+  }
+
+  .chip-label {
+    font-size: 10px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--copper);
+    margin-bottom: 8px;
+    padding-left: 2px;
+  }
+
+  .chip {
+    display: flex;
+    align-items: center;
+    background: var(--bg-card);
+    border: 1px solid var(--chip-border);
+    border-radius: 8px;
+    overflow: hidden;
+    transition: border-color 0.2s;
+  }
+  .chip:hover {
+    border-color: var(--chip-border-hover);
+  }
+
+  .chip-id {
+    flex: 1;
+    font-family: var(--font-mono);
+    font-size: 18px;
+    font-weight: 500;
+    color: var(--copper-bright);
+    padding: 12px 16px;
+    letter-spacing: 2px;
+    user-select: all;
+  }
+
+  .chip-copy {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 46px;
+    border: none;
+    border-left: 1px solid var(--chip-divider);
+    background: transparent;
+    color: var(--silk-dim);
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+  }
+  .chip-copy:hover {
+    background: var(--copy-hover-bg);
+    color: var(--copper-bright);
+  }
+  .chip-copy:active {
+    background: var(--copy-active-bg);
+  }
+  .chip-copy svg {
+    width: 16px;
+    height: 16px;
+    transition: all 0.2s;
+  }
+  .chip-copy .icon-check {
+    position: absolute;
+    color: var(--success);
+    opacity: 0;
+    transform: scale(0.5);
+    transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .chip-copy.copied .icon-copy { opacity: 0; transform: scale(0.5); }
+  .chip-copy.copied .icon-check { opacity: 1; transform: scale(1); }
+
+  /* Info grid */
+  .info-grid {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-top: 20px;
+    animation: fadeIn 0.4s ease-out 0.2s both;
+  }
+
+  .info-item {
+    background: var(--info-bg);
+    border-radius: 8px;
+    padding: 12px 14px;
+    border: 1px solid var(--info-border);
+  }
+
+  .info-label {
+    font-size: 10px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--silk-dim);
+    margin-bottom: 4px;
+  }
+
+  .info-value {
+    font-size: 13px;
+    font-weight: 400;
+    color: var(--silk);
+  }
+  .info-value.mono {
+    font-family: var(--font-mono);
+    font-size: 12px;
+  }
+
+  .status-dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    margin-right: 6px;
+    position: relative;
+    top: -1px;
+  }
+  .status-dot.connected {
+    background: var(--success);
+    box-shadow: 0 0 6px rgba(92, 184, 122, 0.4);
+  }
+  .status-dot.disconnected {
+    background: var(--silk-dim);
+  }
+
+  /* Footer */
+  .footer {
+    margin-top: auto;
+    padding-top: 16px;
+    text-align: center;
+    animation: fadeIn 0.4s ease-out 0.25s both;
+  }
+
+  .footer-text {
+    font-size: 11px;
+    color: var(--silk-dim);
+    opacity: 0.6;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+</style>
+</head>
+<body>
+
+<div class="trace trace-h1"></div>
+<div class="trace trace-h2"></div>
+<div class="trace trace-v1"></div>
+<div class="trace trace-v2"></div>
+<div class="trace trace-dot1"></div>
+<div class="trace trace-dot2"></div>
+
+<div class="container">
+  <div class="logo-mark">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+      <path d="M2 17l10 5 10-5"/>
+      <path d="M2 12l10 5 10-5"/>
+    </svg>
+  </div>
+
+  <div class="title">EasyEDA Agent</div>
+  <div class="subtitle">MCP Bridge for Claude Code</div>
+
+  <div class="chip-container">
+    <div class="chip-label">Instance ID</div>
+    <div class="chip">
+      <div class="chip-id" id="instanceId">--------</div>
+      <button class="chip-copy" id="copyBtn" title="Copy to clipboard">
+        <svg class="icon-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+          <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+        </svg>
+        <svg class="icon-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="20 6 9 17 4 12"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <div class="info-grid">
+    <div class="info-item">
+      <div class="info-label">Version</div>
+      <div class="info-value mono" id="version">--</div>
+    </div>
+    <div class="info-item">
+      <div class="info-label">Status</div>
+      <div class="info-value" id="status">
+        <span class="status-dot disconnected" id="statusDot"></span>
+        <span id="statusText">--</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <div class="footer-text">Built for EasyEDA Pro</div>
+  </div>
+</div>
+
+<script>
+  function applyData(data) {
+    if (!data) return;
+
+    // Apply theme
+    if (data.theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    }
+
+    document.getElementById('instanceId').textContent = data.instanceId || '--------';
+    document.getElementById('version').textContent = data.version || '--';
+
+    var count = data.connectedPorts || 0;
+    var dot = document.getElementById('statusDot');
+    var text = document.getElementById('statusText');
+    if (count > 0) {
+      dot.className = 'status-dot connected';
+      text.textContent = count + ' agent' + (count > 1 ? 's' : '');
+    } else {
+      dot.className = 'status-dot disconnected';
+      text.textContent = 'Not connected';
+    }
+  }
+
+  // Read data from parent window (set by extension before opening iframe)
+  try {
+    applyData(window.parent.__claude_about_data__);
+  } catch (e) {
+    // Cross-origin — try postMessage fallback
+    window.addEventListener('message', function(event) {
+      if (event.data && event.data.type === 'aboutData') {
+        applyData(event.data);
+      }
+    });
+  }
+
+  // Copy button
+  document.getElementById('copyBtn').addEventListener('click', function() {
+    var id = document.getElementById('instanceId').textContent;
+    if (!id || id === '--------') return;
+
+    navigator.clipboard.writeText(id).then(function() {
+      var btn = document.getElementById('copyBtn');
+      btn.classList.add('copied');
+      setTimeout(function() { btn.classList.remove('copied'); }, 1500);
+    }).catch(function() {
+      var el = document.getElementById('instanceId');
+      var range = document.createRange();
+      range.selectNodeContents(el);
+      var sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    });
+  });
+</script>
+</body>
+</html>

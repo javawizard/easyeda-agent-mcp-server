@@ -24,15 +24,30 @@ export interface BridgeResponse {
 	error?: string;
 }
 
+export interface InstanceInfo {
+	instanceId: string;
+	connectedAt: number;
+	projectName?: string;
+	currentDocument?: string;
+	documentType?: string;
+	documents?: Array<{ title: string; uuid: string }>;
+}
+
+interface ConnectedClient {
+	ws: WebSocket;
+	info: InstanceInfo;
+}
+
 interface PendingRequest {
 	resolve: (value: unknown) => void;
 	reject: (reason: Error) => void;
 	timer: ReturnType<typeof setTimeout>;
+	instanceId: string;
 }
 
 export class WebSocketBridge {
 	private wss: WebSocketServer | null = null;
-	private client: WebSocket | null = null;
+	private clients = new Map<string, ConnectedClient>();
 	private pendingRequests = new Map<string, PendingRequest>();
 	private requestIdCounter = 0;
 	private readonly timeout: number;
@@ -94,13 +109,38 @@ export class WebSocketBridge {
 				reject(err);
 			});
 
-			this.wss.on('connection', (ws) => {
-				console.error('[Bridge] EDA Pro Extension connected');
-				this.client = ws;
+			this.wss.on('connection', (ws, req) => {
+				const url = new URL(req.url || '/', `http://localhost:${this.port}`);
+				const instanceId = url.searchParams.get('instanceId');
+
+				if (!instanceId) {
+					console.error('[Bridge] EDA Pro Extension connected without instanceId, rejecting');
+					ws.close(4001, 'instanceId query parameter required');
+					return;
+				}
+
+				console.error(`[Bridge] EDA Pro Extension connected (instance: ${instanceId})`);
+
+				const client: ConnectedClient = {
+					ws,
+					info: {
+						instanceId,
+						connectedAt: Date.now(),
+					},
+				};
+				this.clients.set(instanceId, client);
 
 				ws.on('message', (data) => {
 					try {
-						const response: BridgeResponse = JSON.parse(data.toString());
+						const message = JSON.parse(data.toString());
+
+						// Check if this is a notification (has 'type' field) vs a response (has 'id' field)
+						if (message.type === 'instanceInfo') {
+							this.handleInstanceInfo(instanceId, message.data);
+							return;
+						}
+
+						const response: BridgeResponse = message;
 						this.handleResponse(response);
 					} catch (err) {
 						console.error('[Bridge] Failed to parse message:', err);
@@ -108,34 +148,139 @@ export class WebSocketBridge {
 				});
 
 				ws.on('close', () => {
-					console.error('[Bridge] EDA Pro Extension disconnected');
-					if (this.client === ws) {
-						this.client = null;
-					}
-					// Reject all pending requests
+					console.error(`[Bridge] EDA Pro Extension disconnected (instance: ${instanceId})`);
+					this.clients.delete(instanceId);
+					// Reject pending requests for this instance
 					for (const [id, pending] of this.pendingRequests) {
-						clearTimeout(pending.timer);
-						pending.reject(new Error('EDA Pro Extension disconnected'));
-						this.pendingRequests.delete(id);
+						if (pending.instanceId === instanceId) {
+							clearTimeout(pending.timer);
+							pending.reject(new Error(`EDA Pro Extension disconnected (instance: ${instanceId})`));
+							this.pendingRequests.delete(id);
+						}
 					}
 				});
 
 				ws.on('error', (err) => {
-					console.error('[Bridge] Client error:', err);
+					console.error(`[Bridge] Client error (instance: ${instanceId}):`, err);
+				});
+
+				// Request instance info from the newly connected extension
+				this.requestInstanceInfo(instanceId).catch((err) => {
+					console.error(`[Bridge] Failed to get instance info from ${instanceId}:`, err);
 				});
 			});
 		});
 	}
 
-	isConnected(): boolean {
-		return this.client !== null && this.client.readyState === WebSocket.OPEN;
+	private handleInstanceInfo(instanceId: string, data: Record<string, unknown>): void {
+		const client = this.clients.get(instanceId);
+		if (!client) return;
+
+		client.info.projectName = data.projectName as string | undefined;
+		client.info.currentDocument = data.currentDocument as string | undefined;
+		client.info.documentType = data.documentType as string | undefined;
+		client.info.documents = data.documents as Array<{ title: string; uuid: string }> | undefined;
+
+		console.error(`[Bridge] Instance ${instanceId} info updated: project="${client.info.projectName}", doc="${client.info.currentDocument}" (${client.info.documentType})`);
 	}
 
-	async send(method: string, params: Record<string, unknown> = {}): Promise<unknown> {
-		if (!this.isConnected()) {
+	private async requestInstanceInfo(instanceId: string): Promise<void> {
+		try {
+			const result = await this.sendToInstance(instanceId, 'instance.getInfo');
+			this.handleInstanceInfo(instanceId, result as Record<string, unknown>);
+		} catch {
+			// Non-critical, info will be updated when extension sends it
+		}
+	}
+
+	isConnected(): boolean {
+		return this.clients.size > 0;
+	}
+
+	getConnectedCount(): number {
+		return this.clients.size;
+	}
+
+	getConnectedInstances(): InstanceInfo[] {
+		return Array.from(this.clients.values())
+			.map((c) => ({ ...c.info }))
+			.sort((a, b) => b.connectedAt - a.connectedAt);
+	}
+
+	/**
+	 * Resolve which client to send to.
+	 * - If instanceId is provided, use that specific client.
+	 * - If only one client is connected, auto-select it.
+	 * - If zero or multiple clients, throw a descriptive error.
+	 */
+	private resolveClient(instanceId?: string): ConnectedClient {
+		if (instanceId) {
+			const client = this.clients.get(instanceId);
+			if (!client || client.ws.readyState !== WebSocket.OPEN) {
+				const available = this.getConnectedInstances();
+				const listText = available.length > 0
+					? `\n\nConnected instances:\n${this.formatInstanceList(available)}`
+					: '\n\nNo instances are currently connected.';
+				throw new Error(
+					`Instance "${instanceId}" is not connected.${listText}`,
+				);
+			}
+			return client;
+		}
+
+		if (this.clients.size === 0) {
 			throw new Error('EDA Pro Extension is not connected. Please open EDA Pro and click "Connect Claude" first.');
 		}
 
+		if (this.clients.size === 1) {
+			const [, client] = this.clients.entries().next().value!;
+			if (client.ws.readyState !== WebSocket.OPEN) {
+				throw new Error('EDA Pro Extension is not connected. Please open EDA Pro and click "Connect Claude" first.');
+			}
+			return client;
+		}
+
+		// Multiple clients connected — require instance_id
+		const available = this.getConnectedInstances();
+		throw new Error(
+			`Multiple EasyEDA instances are connected. Specify instance_id to choose one.\n\nConnected instances:\n${this.formatInstanceList(available)}\n\nUse list_instances for full details, or pass the instance_id of the instance you want to interact with.`,
+		);
+	}
+
+	private formatInstanceList(instances: InstanceInfo[]): string {
+		return instances.map((info) => {
+			const parts = [`  - ${info.instanceId}`];
+			if (info.projectName) parts.push(`project: "${info.projectName}"`);
+			if (info.currentDocument) {
+				parts.push(`active: "${info.currentDocument}" (${info.documentType || 'unknown'})`);
+			}
+			return parts.join(' | ');
+		}).join('\n');
+	}
+
+	/**
+	 * Send a request to an EasyEDA instance.
+	 * If params contains instance_id, it is extracted and used for routing (not forwarded to the extension).
+	 * If only one instance is connected, auto-selects it.
+	 */
+	async send(method: string, params: Record<string, unknown> = {}): Promise<unknown> {
+		const { instance_id, ...forwardParams } = params;
+		const client = this.resolveClient(instance_id as string | undefined);
+		return this.sendToClient(client, method, forwardParams);
+	}
+
+	/**
+	 * Send to a specific instance by ID (for internal use like requestInstanceInfo).
+	 */
+	private async sendToInstance(instanceId: string, method: string, params: Record<string, unknown> = {}): Promise<unknown> {
+		const client = this.clients.get(instanceId);
+		if (!client || client.ws.readyState !== WebSocket.OPEN) {
+			throw new Error(`Instance "${instanceId}" is not connected`);
+		}
+		return this.sendToClient(client, method, params);
+	}
+
+	private async sendToClient(client: ConnectedClient, method: string, params: Record<string, unknown> = {}): Promise<unknown> {
 		const id = String(++this.requestIdCounter);
 		const request: BridgeRequest = { id, method, params };
 
@@ -145,9 +290,19 @@ export class WebSocketBridge {
 				reject(new Error(`Request timed out after ${this.timeout}ms: ${method}`));
 			}, this.timeout);
 
-			this.pendingRequests.set(id, { resolve, reject, timer });
-			this.client!.send(JSON.stringify(request));
+			this.pendingRequests.set(id, { resolve, reject, timer, instanceId: client.info.instanceId });
+			client.ws.send(JSON.stringify(request));
 		});
+	}
+
+	/**
+	 * Refresh instance info for all connected instances.
+	 */
+	async refreshAllInstanceInfo(): Promise<void> {
+		const refreshes = Array.from(this.clients.keys()).map((id) =>
+			this.requestInstanceInfo(id),
+		);
+		await Promise.allSettled(refreshes);
 	}
 
 	private handleResponse(response: BridgeResponse): void {
@@ -174,10 +329,10 @@ export class WebSocketBridge {
 			this.pendingRequests.delete(id);
 		}
 
-		if (this.client) {
-			this.client.close();
-			this.client = null;
+		for (const [, client] of this.clients) {
+			client.ws.close();
 		}
+		this.clients.clear();
 
 		return new Promise((resolve) => {
 			if (this.wss) {

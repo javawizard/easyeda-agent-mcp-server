@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { WebSocketBridge } from '../bridge';
-import { queryParams, withQueryParams } from './query-params';
+import { withInstanceParam, withQueryParams } from './query-params';
 
 const GET_ALL_HANDLER_MAP: Record<string, string> = {
 	component: 'pcb.getAll.component',
@@ -54,8 +54,8 @@ Pad fields: primitiveId, net, layer, padNumber, x, y.`,
 			layer: z.string().optional().describe('Filter by layer (e.g. "TopLayer", "BottomLayer")'),
 			primitiveLock: z.boolean().optional().describe('Filter by lock status (true=locked only, false=unlocked only)'),
 		}),
-		async ({ type, net, layer, primitiveLock, fields, filter, limit }) => {
-			const result = await bridge.send(GET_ALL_HANDLER_MAP[type], { net, layer, primitiveLock, fields, filter, limit });
+		async ({ type, net, layer, primitiveLock, instance_id, fields, filter, limit }) => {
+			const result = await bridge.send(GET_ALL_HANDLER_MAP[type], { net, layer, primitiveLock, instance_id, fields, filter, limit });
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);
@@ -69,8 +69,8 @@ Pad fields: primitiveId, net, layer, padNumber, x, y.`,
 				.union([z.string(), z.array(z.string())])
 				.describe('Single primitive ID or array of IDs'),
 		}),
-		async ({ type, primitiveIds, fields, filter, limit }) => {
-			const result = await bridge.send(GET_BY_ID_HANDLER_MAP[type], { primitiveIds, fields, filter, limit });
+		async ({ type, primitiveIds, instance_id, fields, filter, limit }) => {
+			const result = await bridge.send(GET_BY_ID_HANDLER_MAP[type], { primitiveIds, instance_id, fields, filter, limit });
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);
@@ -78,9 +78,9 @@ Pad fields: primitiveId, net, layer, padNumber, x, y.`,
 	server.tool(
 		'pcb_get_all_nets',
 		'Get all net names in the PCB design',
-		{},
-		async () => {
-			const result = await bridge.send('pcb.net.getAllNames');
+		withInstanceParam({}),
+		async ({ instance_id }) => {
+			const result = await bridge.send('pcb.net.getAllNames', { instance_id });
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);
@@ -95,8 +95,8 @@ Pad fields: primitiveId, net, layer, padNumber, x, y.`,
 				.optional()
 				.describe('Filter by primitive types (e.g. ["Line", "Via", "Pad"])'),
 		}),
-		async ({ net, types, fields, filter, limit }) => {
-			const result = await bridge.send('pcb.net.getPrimitives', { net, types, fields, filter, limit });
+		async ({ net, types, instance_id, fields, filter, limit }) => {
+			const result = await bridge.send('pcb.net.getPrimitives', { net, types, instance_id, fields, filter, limit });
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);
@@ -104,11 +104,11 @@ Pad fields: primitiveId, net, layer, padNumber, x, y.`,
 	server.tool(
 		'pcb_get_net_length',
 		'Get the total routed length of a specific net',
-		{
+		withInstanceParam({
 			net: z.string().describe('The net name'),
-		},
-		async ({ net }) => {
-			const result = await bridge.send('pcb.net.getLength', { net });
+		}),
+		async ({ net, instance_id }) => {
+			const result = await bridge.send('pcb.net.getLength', { net, instance_id });
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);
@@ -116,9 +116,9 @@ Pad fields: primitiveId, net, layer, padNumber, x, y.`,
 	server.tool(
 		'pcb_get_design_rules',
 		'Get the current PCB design rule configuration (clearance, width, etc.)',
-		{},
-		async () => {
-			const result = await bridge.send('pcb.drc.getRuleConfiguration');
+		withInstanceParam({}),
+		async ({ instance_id }) => {
+			const result = await bridge.send('pcb.drc.getRuleConfiguration', { instance_id });
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);
@@ -126,9 +126,9 @@ Pad fields: primitiveId, net, layer, padNumber, x, y.`,
 	server.tool(
 		'pcb_get_net_rules',
 		'Get net-specific design rules',
-		{},
-		async () => {
-			const result = await bridge.send('pcb.drc.getNetRules');
+		withInstanceParam({}),
+		async ({ instance_id }) => {
+			const result = await bridge.send('pcb.drc.getNetRules', { instance_id });
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);
@@ -140,8 +140,8 @@ Pin fields: primitiveId, padNumber, net, layer, x, y.`,
 		withQueryParams({
 			primitiveId: z.string().describe('The component primitive ID'),
 		}),
-		async ({ primitiveId, fields, filter, limit }) => {
-			const result = await bridge.send('pcb.component.getPins', { primitiveId, fields, filter, limit });
+		async ({ primitiveId, instance_id, fields, filter, limit }) => {
+			const result = await bridge.send('pcb.component.getPins', { primitiveId, instance_id, fields, filter, limit });
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);
@@ -154,8 +154,8 @@ Pin fields: primitiveId, padNumber, net, layer, x, y.`,
 			ui: z.boolean().default(false).describe('Whether to show DRC results in UI'),
 			verbose: z.boolean().default(true).describe('If true, returns detailed violation list'),
 		}),
-		async ({ strict, ui, verbose, fields, filter, limit }) => {
-			const result = await bridge.send('pcb.drc.check', { strict, ui, verbose, fields, filter, limit });
+		async ({ strict, ui, verbose, instance_id, fields, filter, limit }) => {
+			const result = await bridge.send('pcb.drc.check', { strict, ui, verbose, instance_id, fields, filter, limit });
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);
@@ -164,8 +164,8 @@ Pin fields: primitiveId, padNumber, net, layer, x, y.`,
 		'pcb_get_selected',
 		'Get currently selected primitives in the PCB editor',
 		withQueryParams({}),
-		async ({ fields, filter, limit }) => {
-			const result = await bridge.send('pcb.select.getAll', { fields, filter, limit });
+		async ({ instance_id, fields, filter, limit }) => {
+			const result = await bridge.send('pcb.select.getAll', { instance_id, fields, filter, limit });
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);

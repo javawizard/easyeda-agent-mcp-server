@@ -1,12 +1,13 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { WebSocketBridge } from '../bridge';
+import { withInstanceParam } from './query-params';
 
 export function registerSchWriteTools(server: McpServer, bridge: WebSocketBridge): void {
 	server.tool(
 		'sch_create_component',
 		'Create a schematic component from a library device reference. Use lib_search_device or lib_get_device_by_lcsc first to get the component object. IMPORTANT: The component object must include uuid, symbolUuid, footprintUuid, AND libraryUuid — passing only {deviceUuid, libraryUuid} will fail with a validation error. Pass the full object returned by lib_get_device_by_lcsc with libraryUuid added (from lib_get_system_library_uuid).',
-		{
+		withInstanceParam({
 			component: z
 				.record(z.string(), z.any())
 				.describe(
@@ -19,7 +20,7 @@ export function registerSchWriteTools(server: McpServer, bridge: WebSocketBridge
 			mirror: z.boolean().optional().describe('Whether to mirror the component'),
 			addIntoBom: z.boolean().optional().describe('Whether to include in BOM (default true)'),
 			addIntoPcb: z.boolean().optional().describe('Whether to include in PCB (default true)'),
-		},
+		}),
 		async (params) => {
 			const result = await bridge.send('sch.component.create', params);
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
@@ -29,7 +30,7 @@ export function registerSchWriteTools(server: McpServer, bridge: WebSocketBridge
 	server.tool(
 		'sch_create_net_flag',
 		'Create a Power/Ground/AnalogGround/ProtectGround net flag in the schematic',
-		{
+		withInstanceParam({
 			identification: z
 				.enum(['Power', 'Ground', 'AnalogGround', 'ProtectGround'])
 				.describe('Net flag type'),
@@ -38,7 +39,7 @@ export function registerSchWriteTools(server: McpServer, bridge: WebSocketBridge
 			y: z.number().describe('Y coordinate (Y axis points upward — higher values = higher on screen)'),
 			rotation: z.number().optional().describe('Rotation angle in degrees'),
 			mirror: z.boolean().optional().describe('Whether to mirror'),
-		},
+		}),
 		async (params) => {
 			const result = await bridge.send('sch.component.createNetFlag', params);
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
@@ -48,14 +49,14 @@ export function registerSchWriteTools(server: McpServer, bridge: WebSocketBridge
 	server.tool(
 		'sch_create_net_port',
 		'Create an IN/OUT/BI directional net port in the schematic',
-		{
+		withInstanceParam({
 			direction: z.enum(['IN', 'OUT', 'BI']).describe('Port direction'),
 			net: z.string().describe('Net name'),
 			x: z.number().describe('X coordinate'),
 			y: z.number().describe('Y coordinate'),
 			rotation: z.number().optional().describe('Rotation angle in degrees'),
 			mirror: z.boolean().optional().describe('Whether to mirror'),
-		},
+		}),
 		async (params) => {
 			const result = await bridge.send('sch.component.createNetPort', params);
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
@@ -65,13 +66,13 @@ export function registerSchWriteTools(server: McpServer, bridge: WebSocketBridge
 	server.tool(
 		'sch_delete_component',
 		'Delete one or more schematic components by their primitive IDs',
-		{
+		withInstanceParam({
 			ids: z
 				.union([z.string(), z.array(z.string())])
 				.describe('Single primitive ID or array of primitive IDs to delete'),
-		},
-		async ({ ids }) => {
-			const result = await bridge.send('sch.component.delete', { ids });
+		}),
+		async ({ ids, instance_id }) => {
+			const result = await bridge.send('sch.component.delete', { ids, instance_id });
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);
@@ -79,7 +80,7 @@ export function registerSchWriteTools(server: McpServer, bridge: WebSocketBridge
 	server.tool(
 		'sch_modify_component',
 		'Modify properties of a schematic component (position, rotation, designator, etc.)',
-		{
+		withInstanceParam({
 			primitiveId: z.string().describe('The component primitive ID'),
 			x: z.number().optional().describe('New X coordinate'),
 			y: z.number().optional().describe('New Y coordinate'),
@@ -94,9 +95,9 @@ export function registerSchWriteTools(server: McpServer, bridge: WebSocketBridge
 			manufacturerId: z.string().nullable().optional().describe('Manufacturer part number'),
 			supplier: z.string().nullable().optional().describe('Supplier name'),
 			supplierId: z.string().nullable().optional().describe('Supplier part number (e.g. LCSC C-number)'),
-		},
-		async ({ primitiveId, ...property }) => {
-			const result = await bridge.send('sch.component.modify', { primitiveId, property });
+		}),
+		async ({ primitiveId, instance_id, ...property }) => {
+			const result = await bridge.send('sch.component.modify', { primitiveId, property, instance_id });
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);
@@ -104,7 +105,7 @@ export function registerSchWriteTools(server: McpServer, bridge: WebSocketBridge
 	server.tool(
 		'sch_create_wire',
 		'Create a wire in the schematic defined by a series of coordinate points',
-		{
+		withInstanceParam({
 			line: z
 				.union([
 					z.array(z.number()).min(4).describe('Flat array of coordinates [x1,y1,x2,y2,...]'),
@@ -121,9 +122,9 @@ export function registerSchWriteTools(server: McpServer, bridge: WebSocketBridge
 				.enum(['0', '1', '2', '3'])
 				.optional()
 				.describe('Line type: 0=Solid, 1=Dashed, 2=Dotted, 3=DotDashed'),
-		},
-		async ({ lineType, ...rest }) => {
-			const params: Record<string, any> = { ...rest };
+		}),
+		async ({ lineType, instance_id, ...rest }) => {
+			const params: Record<string, any> = { ...rest, instance_id };
 			if (lineType !== undefined) {
 				params.lineType = Number(lineType);
 			}
@@ -135,13 +136,13 @@ export function registerSchWriteTools(server: McpServer, bridge: WebSocketBridge
 	server.tool(
 		'sch_delete_wire',
 		'Delete one or more wires by their primitive IDs',
-		{
+		withInstanceParam({
 			ids: z
 				.union([z.string(), z.array(z.string())])
 				.describe('Single primitive ID or array of primitive IDs to delete'),
-		},
-		async ({ ids }) => {
-			const result = await bridge.send('sch.wire.delete', { ids });
+		}),
+		async ({ ids, instance_id }) => {
+			const result = await bridge.send('sch.wire.delete', { ids, instance_id });
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);
@@ -149,7 +150,7 @@ export function registerSchWriteTools(server: McpServer, bridge: WebSocketBridge
 	server.tool(
 		'sch_modify_wire',
 		'Modify properties of an existing wire',
-		{
+		withInstanceParam({
 			primitiveId: z.string().describe('The wire primitive ID'),
 			line: z
 				.union([z.array(z.number()), z.array(z.array(z.number()))])
@@ -162,13 +163,13 @@ export function registerSchWriteTools(server: McpServer, bridge: WebSocketBridge
 				.enum(['0', '1', '2', '3'])
 				.optional()
 				.describe('Line type: 0=Solid, 1=Dashed, 2=Dotted, 3=DotDashed'),
-		},
-		async ({ primitiveId, lineType, ...rest }) => {
+		}),
+		async ({ primitiveId, lineType, instance_id, ...rest }) => {
 			const property: Record<string, any> = { ...rest };
 			if (lineType !== undefined) {
 				property.lineType = Number(lineType);
 			}
-			const result = await bridge.send('sch.wire.modify', { primitiveId, property });
+			const result = await bridge.send('sch.wire.modify', { primitiveId, property, instance_id });
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);
@@ -178,7 +179,7 @@ export function registerSchWriteTools(server: McpServer, bridge: WebSocketBridge
 		`Select and highlight primitives in the schematic editor by designators, pins, or nets.
 Selection is additive — each call adds to the current selection. There is currently no programmatic way to clear the selection; the user must click on empty space in the editor to deselect.
 Pin format: "U1_1" (designator_pinNumber). Components selects the whole component, pins highlights just the pin, nets highlights the entire wire/net.`,
-		{
+		withInstanceParam({
 			components: z
 				.array(z.string())
 				.optional()
@@ -191,14 +192,15 @@ Pin format: "U1_1" (designator_pinNumber). Components selects the whole componen
 				.array(z.string())
 				.optional()
 				.describe('Net names to select (e.g. ["GND", "VBUS"])'),
-		},
-		async ({ components, pins, nets }) => {
+		}),
+		async ({ components, pins, nets, instance_id }) => {
 			const result = await bridge.send('sch.select.crossProbe', {
 				components,
 				pins,
 				nets,
 				highlight: true,
 				select: true,
+				instance_id,
 			});
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
@@ -207,15 +209,15 @@ Pin format: "U1_1" (designator_pinNumber). Components selects the whole componen
 	server.tool(
 		'sch_set_netlist',
 		'Update the schematic netlist',
-		{
+		withInstanceParam({
 			type: z
 				.enum(['Allegro', 'PADS', 'Protel2', 'JLCEDA', 'EasyEDA', 'DISA'])
 				.optional()
 				.describe('Netlist format type'),
 			netlist: z.string().describe('Netlist data string'),
-		},
-		async ({ type, netlist }) => {
-			const result = await bridge.send('sch.netlist.set', { type, netlist });
+		}),
+		async ({ type, netlist, instance_id }) => {
+			const result = await bridge.send('sch.netlist.set', { type, netlist, instance_id });
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);
@@ -223,9 +225,9 @@ Pin format: "U1_1" (designator_pinNumber). Components selects the whole componen
 	server.tool(
 		'sch_save',
 		'Save the current schematic document',
-		{},
-		async () => {
-			const result = await bridge.send('sch.document.save');
+		withInstanceParam({}),
+		async ({ instance_id }) => {
+			const result = await bridge.send('sch.document.save', { instance_id });
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);
@@ -233,9 +235,9 @@ Pin format: "U1_1" (designator_pinNumber). Components selects the whole componen
 	server.tool(
 		'sch_import_changes',
 		'Import changes from PCB back into the schematic',
-		{},
-		async () => {
-			const result = await bridge.send('sch.document.importChanges');
+		withInstanceParam({}),
+		async ({ instance_id }) => {
+			const result = await bridge.send('sch.document.importChanges', { instance_id });
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);

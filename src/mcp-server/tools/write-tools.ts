@@ -1,6 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { WebSocketBridge } from '../bridge';
+import { withInstanceParam } from './query-params';
 
 const DELETE_HANDLER_MAP: Record<string, string> = {
 	component: 'pcb.delete.component',
@@ -30,7 +31,7 @@ export function registerWriteTools(server: McpServer, bridge: WebSocketBridge): 
 	server.tool(
 		'pcb_create_track',
 		'Create a single track segment (line) between two points on a specified layer and net',
-		{
+		withInstanceParam({
 			net: z.string().describe('Net name for the track'),
 			layer: z.string().describe('Layer name (e.g. "TopLayer", "BottomLayer", "InnerLayer1")'),
 			startX: z.number().describe('Start X coordinate'),
@@ -38,7 +39,7 @@ export function registerWriteTools(server: McpServer, bridge: WebSocketBridge): 
 			endX: z.number().describe('End X coordinate'),
 			endY: z.number().describe('End Y coordinate'),
 			lineWidth: z.number().optional().describe('Track width (default uses design rules)'),
-		},
+		}),
 		async (params) => {
 			const result = await bridge.send('pcb.create.line', params);
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
@@ -48,7 +49,7 @@ export function registerWriteTools(server: McpServer, bridge: WebSocketBridge): 
 	server.tool(
 		'pcb_create_polyline_track',
 		'Create a multi-segment polyline track defined by a series of points',
-		{
+		withInstanceParam({
 			net: z.string().describe('Net name for the track'),
 			layer: z.string().describe('Layer name'),
 			polygon: z
@@ -56,7 +57,7 @@ export function registerWriteTools(server: McpServer, bridge: WebSocketBridge): 
 				.min(2)
 				.describe('Array of points [{x, y}, ...] defining the polyline path'),
 			lineWidth: z.number().optional().describe('Track width'),
-		},
+		}),
 		async (params) => {
 			const result = await bridge.send('pcb.create.polyline', params);
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
@@ -66,14 +67,14 @@ export function registerWriteTools(server: McpServer, bridge: WebSocketBridge): 
 	server.tool(
 		'pcb_create_via',
 		'Create a via at the specified position',
-		{
+		withInstanceParam({
 			net: z.string().describe('Net name'),
 			x: z.number().describe('X coordinate'),
 			y: z.number().describe('Y coordinate'),
 			holeDiameter: z.number().describe('Hole diameter'),
 			diameter: z.number().describe('Via pad diameter'),
 			viaType: z.string().optional().describe('Via type (e.g. "Through", "BlindBuried")'),
-		},
+		}),
 		async (params) => {
 			const result = await bridge.send('pcb.create.via', params);
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
@@ -83,7 +84,7 @@ export function registerWriteTools(server: McpServer, bridge: WebSocketBridge): 
 	server.tool(
 		'pcb_create_arc',
 		'Create an arc track segment on the PCB',
-		{
+		withInstanceParam({
 			net: z.string().describe('Net name'),
 			layer: z.string().describe('Layer name'),
 			startX: z.number().describe('Start X coordinate'),
@@ -92,7 +93,7 @@ export function registerWriteTools(server: McpServer, bridge: WebSocketBridge): 
 			endY: z.number().describe('End Y coordinate'),
 			arcAngle: z.number().describe('Arc angle in degrees'),
 			lineWidth: z.number().optional().describe('Track width'),
-		},
+		}),
 		async (params) => {
 			const result = await bridge.send('pcb.create.arc', params);
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
@@ -102,14 +103,14 @@ export function registerWriteTools(server: McpServer, bridge: WebSocketBridge): 
 	server.tool(
 		'pcb_create_pad',
 		'Create a standalone pad on the PCB',
-		{
+		withInstanceParam({
 			layer: z.string().describe('Pad layer'),
 			padNumber: z.string().describe('Pad number/name'),
 			x: z.number().describe('X coordinate'),
 			y: z.number().describe('Y coordinate'),
 			rotation: z.number().optional().describe('Rotation angle in degrees'),
 			net: z.string().optional().describe('Net name'),
-		},
+		}),
 		async (params) => {
 			const result = await bridge.send('pcb.create.pad', params);
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
@@ -119,7 +120,7 @@ export function registerWriteTools(server: McpServer, bridge: WebSocketBridge): 
 	server.tool(
 		'pcb_create_pour',
 		'Create a copper pour region on the PCB',
-		{
+		withInstanceParam({
 			net: z.string().describe('Net name for the pour'),
 			layer: z.string().describe('Layer name'),
 			polygon: z
@@ -130,7 +131,7 @@ export function registerWriteTools(server: McpServer, bridge: WebSocketBridge): 
 			pourName: z.string().optional().describe('Name for the pour region'),
 			pourPriority: z.number().optional().describe('Pour priority (higher = poured first)'),
 			lineWidth: z.number().optional().describe('Line width'),
-		},
+		}),
 		async (params) => {
 			const result = await bridge.send('pcb.create.pour', params);
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
@@ -140,14 +141,14 @@ export function registerWriteTools(server: McpServer, bridge: WebSocketBridge): 
 	server.tool(
 		'pcb_create_fill',
 		'Create a fill region on the PCB',
-		{
+		withInstanceParam({
 			layer: z.string().describe('Layer name'),
 			polygon: z
 				.array(z.union([z.string(), z.number()]))
 				.describe('Polygon source array, e.g. ["L", x1, y1, x2, y2, ..., x1, y1]'),
 			net: z.string().optional().describe('Net name'),
 			lineWidth: z.number().optional().describe('Line width'),
-		},
+		}),
 		async (params) => {
 			const result = await bridge.send('pcb.create.fill', params);
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
@@ -157,7 +158,7 @@ export function registerWriteTools(server: McpServer, bridge: WebSocketBridge): 
 	server.tool(
 		'pcb_create_region',
 		'Create a design rule region (keepout/constraint area) on the PCB',
-		{
+		withInstanceParam({
 			layer: z.string().describe('Layer name'),
 			polygon: z
 				.array(z.union([z.string(), z.number()]))
@@ -165,7 +166,7 @@ export function registerWriteTools(server: McpServer, bridge: WebSocketBridge): 
 			ruleType: z.array(z.string()).optional().describe('Rule type(s) for the region'),
 			regionName: z.string().optional().describe('Name for the region'),
 			lineWidth: z.number().optional().describe('Outline width'),
-		},
+		}),
 		async (params) => {
 			const result = await bridge.send('pcb.create.region', params);
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
@@ -177,7 +178,7 @@ export function registerWriteTools(server: McpServer, bridge: WebSocketBridge): 
 	server.tool(
 		'pcb_move_component',
 		'Move and/or rotate a component. Can also change its layer (flip), lock status, designator, etc.',
-		{
+		withInstanceParam({
 			primitiveId: z.string().describe('The component primitive ID'),
 			x: z.number().optional().describe('New X coordinate'),
 			y: z.number().optional().describe('New Y coordinate'),
@@ -185,9 +186,9 @@ export function registerWriteTools(server: McpServer, bridge: WebSocketBridge): 
 			layer: z.string().optional().describe('Target layer ("TopLayer" or "BottomLayer")'),
 			primitiveLock: z.boolean().optional().describe('Whether to lock the component'),
 			designator: z.string().optional().describe('New designator (e.g. "R1", "U2")'),
-		},
-		async ({ primitiveId, ...property }) => {
-			const result = await bridge.send('pcb.modify.component', { primitiveId, property });
+		}),
+		async ({ primitiveId, instance_id, ...property }) => {
+			const result = await bridge.send('pcb.modify.component', { primitiveId, property, instance_id });
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);
@@ -195,7 +196,7 @@ export function registerWriteTools(server: McpServer, bridge: WebSocketBridge): 
 	server.tool(
 		'pcb_modify_track',
 		'Modify properties of an existing track segment (line)',
-		{
+		withInstanceParam({
 			primitiveId: z.string().describe('The track primitive ID'),
 			net: z.string().optional().describe('New net name'),
 			layer: z.string().optional().describe('New layer'),
@@ -204,9 +205,9 @@ export function registerWriteTools(server: McpServer, bridge: WebSocketBridge): 
 			endX: z.number().optional().describe('New end X'),
 			endY: z.number().optional().describe('New end Y'),
 			lineWidth: z.number().optional().describe('New track width'),
-		},
-		async ({ primitiveId, ...property }) => {
-			const result = await bridge.send('pcb.modify.line', { primitiveId, property });
+		}),
+		async ({ primitiveId, instance_id, ...property }) => {
+			const result = await bridge.send('pcb.modify.line', { primitiveId, property, instance_id });
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);
@@ -222,7 +223,7 @@ export function registerWriteTools(server: McpServer, bridge: WebSocketBridge): 
 - fill: layer, net, fillMode, lineWidth
 - region: layer, ruleType, regionName, lineWidth
 All types support: primitiveLock`,
-		{
+		withInstanceParam({
 			type: z
 				.enum(['via', 'polyline', 'arc', 'pad', 'pour', 'fill', 'region'])
 				.describe('Primitive type to modify'),
@@ -230,9 +231,9 @@ All types support: primitiveLock`,
 			property: z
 				.record(z.string(), z.any())
 				.describe('Properties to modify (see description for valid keys per type)'),
-		},
-		async ({ type, primitiveId, property }) => {
-			const result = await bridge.send(MODIFY_HANDLER_MAP[type], { primitiveId, property });
+		}),
+		async ({ type, primitiveId, property, instance_id }) => {
+			const result = await bridge.send(MODIFY_HANDLER_MAP[type], { primitiveId, property, instance_id });
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);
@@ -242,16 +243,16 @@ All types support: primitiveLock`,
 	server.tool(
 		'pcb_delete_primitives',
 		'Delete one or more PCB primitives by type and IDs',
-		{
+		withInstanceParam({
 			type: z
 				.enum(['component', 'track', 'polyline', 'via', 'pad', 'pour', 'fill', 'arc', 'region'])
 				.describe('Primitive type to delete'),
 			ids: z
 				.union([z.string(), z.array(z.string())])
 				.describe('Primitive ID(s) to delete'),
-		},
-		async ({ type, ids }) => {
-			const result = await bridge.send(DELETE_HANDLER_MAP[type], { ids });
+		}),
+		async ({ type, ids, instance_id }) => {
+			const result = await bridge.send(DELETE_HANDLER_MAP[type], { ids, instance_id });
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);
@@ -261,11 +262,11 @@ All types support: primitiveLock`,
 	server.tool(
 		'pcb_save',
 		'Save the current PCB document',
-		{
+		withInstanceParam({
 			uuid: z.string().optional().describe('Document UUID (uses current document if not provided)'),
-		},
-		async ({ uuid }) => {
-			const result = await bridge.send('pcb.document.save', { uuid });
+		}),
+		async ({ uuid, instance_id }) => {
+			const result = await bridge.send('pcb.document.save', { uuid, instance_id });
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);

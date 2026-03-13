@@ -1,17 +1,17 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { WebSocketBridge } from '../bridge';
-import { queryParams, withQueryParams } from './query-params';
+import { withInstanceParam, withQueryParams } from './query-params';
 
 export function registerAnalysisTools(server: McpServer, bridge: WebSocketBridge): void {
 	server.tool(
 		'pcb_highlight_net',
 		'Highlight a specific net in the PCB editor for visual inspection',
-		{
+		withInstanceParam({
 			net: z.string().describe('Net name to highlight'),
-		},
-		async ({ net }) => {
-			const result = await bridge.send('pcb.net.highlight', { net });
+		}),
+		async ({ net, instance_id }) => {
+			const result = await bridge.send('pcb.net.highlight', { net, instance_id });
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);
@@ -19,11 +19,11 @@ export function registerAnalysisTools(server: McpServer, bridge: WebSocketBridge
 	server.tool(
 		'pcb_select_net',
 		'Select all primitives of a specific net in the PCB editor',
-		{
+		withInstanceParam({
 			net: z.string().describe('Net name to select'),
-		},
-		async ({ net }) => {
-			const result = await bridge.send('pcb.net.select', { net });
+		}),
+		async ({ net, instance_id }) => {
+			const result = await bridge.send('pcb.net.select', { net, instance_id });
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);
@@ -31,9 +31,9 @@ export function registerAnalysisTools(server: McpServer, bridge: WebSocketBridge
 	server.tool(
 		'pcb_clear_selection',
 		'Clear all selection in the PCB editor',
-		{},
-		async () => {
-			const result = await bridge.send('pcb.select.clear');
+		withInstanceParam({}),
+		async ({ instance_id }) => {
+			const result = await bridge.send('pcb.select.clear', { instance_id });
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);
@@ -41,12 +41,12 @@ export function registerAnalysisTools(server: McpServer, bridge: WebSocketBridge
 	server.tool(
 		'pcb_navigate_to',
 		'Navigate the PCB editor viewport to specific coordinates',
-		{
+		withInstanceParam({
 			x: z.number().describe('X coordinate to navigate to'),
 			y: z.number().describe('Y coordinate to navigate to'),
-		},
-		async ({ x, y }) => {
-			const result = await bridge.send('pcb.document.navigateTo', { x, y });
+		}),
+		async ({ x, y, instance_id }) => {
+			const result = await bridge.send('pcb.document.navigateTo', { x, y, instance_id });
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);
@@ -54,14 +54,14 @@ export function registerAnalysisTools(server: McpServer, bridge: WebSocketBridge
 	server.tool(
 		'pcb_navigate_to_region',
 		'Navigate and zoom the PCB editor viewport to fit a specific region',
-		{
+		withInstanceParam({
 			left: z.number().describe('Left boundary X'),
 			right: z.number().describe('Right boundary X'),
 			top: z.number().describe('Top boundary Y'),
 			bottom: z.number().describe('Bottom boundary Y'),
-		},
-		async ({ left, right, top, bottom }) => {
-			const result = await bridge.send('pcb.document.navigateToRegion', { left, right, top, bottom });
+		}),
+		async ({ left, right, top, bottom, instance_id }) => {
+			const result = await bridge.send('pcb.document.navigateToRegion', { left, right, top, bottom, instance_id });
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);
@@ -69,9 +69,9 @@ export function registerAnalysisTools(server: McpServer, bridge: WebSocketBridge
 	server.tool(
 		'pcb_zoom_to_board',
 		'Zoom the viewport to fit the entire board outline',
-		{},
-		async () => {
-			const result = await bridge.send('pcb.document.zoomToBoardOutline');
+		withInstanceParam({}),
+		async ({ instance_id }) => {
+			const result = await bridge.send('pcb.document.zoomToBoardOutline', { instance_id });
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);
@@ -79,12 +79,12 @@ export function registerAnalysisTools(server: McpServer, bridge: WebSocketBridge
 	server.tool(
 		'pcb_get_primitive_at_point',
 		'Get the primitive at a specific point on the PCB',
-		{
+		withInstanceParam({
 			x: z.number().describe('X coordinate'),
 			y: z.number().describe('Y coordinate'),
-		},
-		async ({ x, y }) => {
-			const result = await bridge.send('pcb.document.getPrimitiveAtPoint', { x, y });
+		}),
+		async ({ x, y, instance_id }) => {
+			const result = await bridge.send('pcb.document.getPrimitiveAtPoint', { x, y, instance_id });
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);
@@ -102,9 +102,9 @@ export function registerAnalysisTools(server: McpServer, bridge: WebSocketBridge
 				.optional()
 				.describe('true=must be fully inside, false=intersecting also counts'),
 		}),
-		async ({ left, right, top, bottom, leftToRight, fields, filter, limit }) => {
+		async ({ left, right, top, bottom, leftToRight, instance_id, fields, filter, limit }) => {
 			const result = await bridge.send('pcb.document.getPrimitivesInRegion', {
-				left, right, top, bottom, leftToRight, fields, filter, limit,
+				left, right, top, bottom, leftToRight, instance_id, fields, filter, limit,
 			});
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
@@ -113,17 +113,17 @@ export function registerAnalysisTools(server: McpServer, bridge: WebSocketBridge
 	server.tool(
 		'pcb_canvas_origin',
 		'Get or set the canvas origin offset relative to data origin',
-		{
+		withInstanceParam({
 			action: z.enum(['get', 'set']).describe('"get" to read, "set" to write'),
 			offsetX: z.number().optional().describe('X offset (required for set)'),
 			offsetY: z.number().optional().describe('Y offset (required for set)'),
-		},
-		async ({ action, offsetX, offsetY }) => {
+		}),
+		async ({ action, offsetX, offsetY, instance_id }) => {
 			if (action === 'get') {
-				const result = await bridge.send('pcb.document.getCanvasOrigin');
+				const result = await bridge.send('pcb.document.getCanvasOrigin', { instance_id });
 				return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 			}
-			const result = await bridge.send('pcb.document.setCanvasOrigin', { offsetX, offsetY });
+			const result = await bridge.send('pcb.document.setCanvasOrigin', { offsetX, offsetY, instance_id });
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);
@@ -131,17 +131,17 @@ export function registerAnalysisTools(server: McpServer, bridge: WebSocketBridge
 	server.tool(
 		'pcb_convert_coordinates',
 		'Convert between canvas coordinates and data coordinates',
-		{
+		withInstanceParam({
 			direction: z.enum(['canvasToData', 'dataToCanvas']).describe('Conversion direction'),
 			x: z.number().describe('X coordinate'),
 			y: z.number().describe('Y coordinate'),
-		},
-		async ({ direction, x, y }) => {
+		}),
+		async ({ direction, x, y, instance_id }) => {
 			const method =
 				direction === 'canvasToData'
 					? 'pcb.document.convertCanvasToData'
 					: 'pcb.document.convertDataToCanvas';
-			const result = await bridge.send(method, { x, y });
+			const result = await bridge.send(method, { x, y, instance_id });
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);
@@ -149,11 +149,11 @@ export function registerAnalysisTools(server: McpServer, bridge: WebSocketBridge
 	server.tool(
 		'pcb_import_changes',
 		'Import changes from schematic into the PCB (sync schematic to PCB)',
-		{
+		withInstanceParam({
 			uuid: z.string().optional().describe('Schematic UUID (uses associated schematic if not provided)'),
-		},
-		async ({ uuid }) => {
-			const result = await bridge.send('pcb.document.importChanges', { uuid });
+		}),
+		async ({ uuid, instance_id }) => {
+			const result = await bridge.send('pcb.document.importChanges', { uuid, instance_id });
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);

@@ -1,6 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { WebSocketBridge } from '../bridge';
+import { withInstanceParam } from './query-params';
 
 const LAYER_HANDLERS: Record<string, string> = {
 	get_all: 'pcb.layer.getAll',
@@ -29,7 +30,7 @@ export function registerPcbLayerTools(server: McpServer, bridge: WebSocketBridge
 - modify: modify layer properties (layer: string, property: {name?, type?, color?, transparency?})
 - add_custom: add a new custom layer
 - remove: remove a custom layer (layer: string)`,
-		{
+		withInstanceParam({
 			action: z
 				.enum([
 					'get_all', 'select', 'set_visible', 'set_invisible',
@@ -58,9 +59,9 @@ export function registerPcbLayerTools(server: McpServer, bridge: WebSocketBridge
 				})
 				.optional()
 				.describe('Properties to modify (for modify action)'),
-		},
-		async ({ action, ...params }) => {
-			const result = await bridge.send(LAYER_HANDLERS[action], params);
+		}),
+		async ({ action, instance_id, ...params }) => {
+			const result = await bridge.send(LAYER_HANDLERS[action], { ...params, instance_id });
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);
