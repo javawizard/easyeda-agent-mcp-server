@@ -195,7 +195,7 @@ async function requireDocumentType(method: string): Promise<void> {
 		const current =
 			docType === 1 ? ' (a schematic is currently open)' : docType != null ? '' : ' (no document is open)';
 		throw new Error(
-			`This tool requires a PCB document, but the currently active tab is not a PCB${current}. Use editor_open_document to switch to a PCB document and try again.`,
+			`This tool requires a PCB document, but the currently active tab is not a PCB${current}. Pass a PCB document UUID as the "document" parameter, or use editor_open_document to switch.`,
 		);
 	}
 
@@ -203,7 +203,7 @@ async function requireDocumentType(method: string): Promise<void> {
 		const current =
 			docType === 3 ? ' (a PCB is currently open)' : docType != null ? '' : ' (no document is open)';
 		throw new Error(
-			`This tool requires a schematic document, but the currently active tab is not a schematic${current}. Use editor_open_document to switch to a schematic document and try again.`,
+			`This tool requires a schematic document, but the currently active tab is not a schematic${current}. Pass a schematic document UUID as the "document" parameter, or use editor_open_document to switch.`,
 		);
 	}
 }
@@ -217,8 +217,8 @@ function handleMessage(extensionUuid: string, port: number, event: MessageEvent<
 		const method: string = request.method;
 		const params: Record<string, any> = request.params || {};
 
-		// Extract query params before dispatching to handler
-		const { fields, filter, limit, ...handlerParams } = params;
+		// Extract query params and document before dispatching to handler
+		const { fields, filter, limit, document, ...handlerParams } = params;
 		const qp: QueryParams = { fields, filter, limit };
 
 		const handler = allHandlers[method];
@@ -227,18 +227,31 @@ function handleMessage(extensionUuid: string, port: number, event: MessageEvent<
 			return;
 		}
 
-		requireDocumentType(method).then(
-			() =>
-				handler(handlerParams).then(
-					(result) => sendResponse(extensionUuid, port, id!, applyQueryParams(result, qp)),
-					(err: any) => {
-						const errorMsg = err instanceof Error ? err.message : String(err);
-						sendResponse(extensionUuid, port, id!, undefined, errorMsg);
-					},
-				),
+		// Auto-switch document if specified, then validate doc type, then run handler
+		// Strip @projectUuid suffix if present — openDocument only accepts the document UUID
+		const docUuid = document ? document.split('@')[0] : undefined;
+		const switchDoc = docUuid
+			? eda.dmt_EditorControl.openDocument(docUuid)
+			: Promise.resolve();
+
+		switchDoc.then(
+			() => requireDocumentType(method).then(
+				() =>
+					handler(handlerParams).then(
+						(result) => sendResponse(extensionUuid, port, id!, applyQueryParams(result, qp)),
+						(err: any) => {
+							const errorMsg = err instanceof Error ? err.message : String(err);
+							sendResponse(extensionUuid, port, id!, undefined, errorMsg);
+						},
+					),
+				(err: any) => {
+					const errorMsg = err instanceof Error ? err.message : String(err);
+					sendResponse(extensionUuid, port, id!, undefined, errorMsg);
+				},
+			),
 			(err: any) => {
 				const errorMsg = err instanceof Error ? err.message : String(err);
-				sendResponse(extensionUuid, port, id!, undefined, errorMsg);
+				sendResponse(extensionUuid, port, id!, undefined, `Failed to switch to document "${docUuid}": ${errorMsg}`);
 			},
 		);
 	} catch (err: any) {

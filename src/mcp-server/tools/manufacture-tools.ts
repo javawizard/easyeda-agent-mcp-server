@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { WebSocketBridge } from '../bridge';
-import { withInstanceParam } from './query-params';
+import { withDocumentParam } from './query-params';
 
 const EXPORT_HANDLER_MAP: Record<string, string> = {
 	dsn: 'pcb.manufacture.getDsnFile',
@@ -31,7 +31,7 @@ export function registerManufactureTools(server: McpServer, bridge: WebSocketBri
 Formats: dsn (for FreeRouting), gerber (manufacturing), bom (bill of materials), pick_and_place (assembly),
 3d (STEP/OBJ), pdf, netlist, dxf, altium, pads, autoroute_json, autolayout_json.
 Use fileType for sub-formats: "xlsx"/"csv" (bom, pick_and_place), "step"/"obj" (3d).`,
-		withInstanceParam({
+		withDocumentParam({
 			format: z
 				.enum([
 					'dsn', 'autoroute_json', 'autolayout_json', 'gerber', 'bom',
@@ -44,8 +44,8 @@ Use fileType for sub-formats: "xlsx"/"csv" (bom, pick_and_place), "step"/"obj" (
 				.optional()
 				.describe('Sub-format (e.g. "xlsx"/"csv" for bom, "step"/"obj" for 3d)'),
 		}),
-		async ({ format, fileName, fileType, instance_id }) => {
-			const result = await bridge.send(EXPORT_HANDLER_MAP[format], { fileName, fileType, instance_id });
+		async ({ format, ...rest }) => {
+			const result = await bridge.send(EXPORT_HANDLER_MAP[format], rest);
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);
@@ -54,15 +54,15 @@ Use fileType for sub-formats: "xlsx"/"csv" (bom, pick_and_place), "step"/"obj" (
 		'pcb_import',
 		`Import routing or layout result files into the PCB (Base64-encoded).
 Formats: autoroute_json (JSON autoroute), autolayout_json (JSON autolayout), autoroute_ses (FreeRouting SES).`,
-		withInstanceParam({
+		withDocumentParam({
 			format: z
 				.enum(['autoroute_json', 'autolayout_json', 'autoroute_ses'])
 				.describe('Import format'),
 			data: z.string().describe('Base64-encoded file content'),
 			fileName: z.string().optional().describe('File name'),
 		}),
-		async ({ format, data, fileName, instance_id }) => {
-			const result = await bridge.send(IMPORT_HANDLER_MAP[format], { data, fileName, instance_id });
+		async ({ format, ...rest }) => {
+			const result = await bridge.send(IMPORT_HANDLER_MAP[format], rest);
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);

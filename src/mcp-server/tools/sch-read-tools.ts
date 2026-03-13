@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { WebSocketBridge } from '../bridge';
-import { withInstanceParam, withQueryParams } from './query-params';
+import { withDocumentParam, withQueryParams } from './query-params';
 
 export function registerSchReadTools(server: McpServer, bridge: WebSocketBridge): void {
 	server.tool(
@@ -19,8 +19,8 @@ Note: name often contains EasyEDA template expressions like ={Manufacturer Part}
 				.optional()
 				.describe('If true, get components from all schematic pages instead of just the current page'),
 		}),
-		async ({ componentType, allSchematicPages, instance_id, fields, filter, limit }) => {
-			const result = await bridge.send('sch.component.getAll', { componentType, allSchematicPages, instance_id, fields, filter, limit });
+		async (params) => {
+			const result = await bridge.send('sch.component.getAll', params);
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);
@@ -28,13 +28,13 @@ Note: name often contains EasyEDA template expressions like ={Manufacturer Part}
 	server.tool(
 		'sch_get_component',
 		'Get one or more schematic components by primitive ID(s)',
-		withInstanceParam({
+		withDocumentParam({
 			primitiveIds: z
 				.union([z.string(), z.array(z.string())])
 				.describe('Single primitive ID or array of primitive IDs'),
 		}),
-		async ({ primitiveIds, instance_id }) => {
-			const result = await bridge.send('sch.component.get', { primitiveIds, instance_id });
+		async (params) => {
+			const result = await bridge.send('sch.component.get', params);
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);
@@ -47,8 +47,8 @@ Each pin includes a net field with the net name it is connected to (empty string
 		withQueryParams({
 			primitiveId: z.string().describe('The component primitive ID'),
 		}),
-		async ({ primitiveId, instance_id, fields, filter, limit }) => {
-			const result = await bridge.send('sch.component.getAllPins', { primitiveId, instance_id, fields, filter, limit });
+		async (params) => {
+			const result = await bridge.send('sch.component.getAllPins', params);
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);
@@ -62,8 +62,8 @@ Each pin includes a net field with the net name it is connected to (empty string
 				.optional()
 				.describe('Filter by net name or array of net names'),
 		}),
-		async ({ net, instance_id, fields, filter, limit }) => {
-			const result = await bridge.send('sch.wire.getAll', { net, instance_id, fields, filter, limit });
+		async (params) => {
+			const result = await bridge.send('sch.wire.getAll', params);
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);
@@ -71,13 +71,13 @@ Each pin includes a net field with the net name it is connected to (empty string
 	server.tool(
 		'sch_get_wire',
 		'Get one or more wires by primitive ID(s)',
-		withInstanceParam({
+		withDocumentParam({
 			primitiveIds: z
 				.union([z.string(), z.array(z.string())])
 				.describe('Single primitive ID or array of primitive IDs'),
 		}),
-		async ({ primitiveIds, instance_id }) => {
-			const result = await bridge.send('sch.wire.get', { primitiveIds, instance_id });
+		async (params) => {
+			const result = await bridge.send('sch.wire.get', params);
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);
@@ -86,8 +86,8 @@ Each pin includes a net field with the net name it is connected to (empty string
 		'sch_get_selected',
 		'Get all currently selected primitives in the schematic editor',
 		withQueryParams({}),
-		async ({ instance_id, fields, filter, limit }) => {
-			const result = await bridge.send('sch.select.getAll', { instance_id, fields, filter, limit });
+		async (params) => {
+			const result = await bridge.send('sch.select.getAll', params);
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);
@@ -95,9 +95,9 @@ Each pin includes a net field with the net name it is connected to (empty string
 	server.tool(
 		'sch_get_selected_ids',
 		'Get primitive IDs of all currently selected primitives in the schematic editor',
-		withInstanceParam({}),
-		async ({ instance_id }) => {
-			const result = await bridge.send('sch.select.getAllIds', { instance_id });
+		withDocumentParam({}),
+		async (params) => {
+			const result = await bridge.send('sch.select.getAllIds', params);
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);
@@ -105,11 +105,11 @@ Each pin includes a net field with the net name it is connected to (empty string
 	server.tool(
 		'sch_get_primitive',
 		'Get a schematic primitive by its ID with all properties',
-		withInstanceParam({
+		withDocumentParam({
 			id: z.string().describe('The primitive ID'),
 		}),
-		async ({ id, instance_id }) => {
-			const result = await bridge.send('sch.primitive.get', { id, instance_id });
+		async (params) => {
+			const result = await bridge.send('sch.primitive.get', params);
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);
@@ -117,11 +117,11 @@ Each pin includes a net field with the net name it is connected to (empty string
 	server.tool(
 		'sch_get_primitive_type',
 		'Get the type of a schematic primitive by its ID',
-		withInstanceParam({
+		withDocumentParam({
 			id: z.string().describe('The primitive ID'),
 		}),
-		async ({ id, instance_id }) => {
-			const result = await bridge.send('sch.primitive.getType', { id, instance_id });
+		async (params) => {
+			const result = await bridge.send('sch.primitive.getType', params);
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);
@@ -129,11 +129,11 @@ Each pin includes a net field with the net name it is connected to (empty string
 	server.tool(
 		'sch_get_primitive_bbox',
 		'Get the bounding box of one or more schematic primitives',
-		withInstanceParam({
+		withDocumentParam({
 			primitiveIds: z.array(z.string()).describe('Array of primitive IDs'),
 		}),
-		async ({ primitiveIds, instance_id }) => {
-			const result = await bridge.send('sch.primitive.getBBox', { primitiveIds, instance_id });
+		async (params) => {
+			const result = await bridge.send('sch.primitive.getBBox', params);
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);
@@ -149,8 +149,8 @@ Only use this tool when you need a specific netlist export format (Allegro, PADS
 				.optional()
 				.describe('Netlist format type'),
 		}),
-		async ({ type, instance_id, fields, filter, limit }) => {
-			const result = await bridge.send('sch.netlist.get', { type, instance_id, fields, filter, limit });
+		async (params) => {
+			const result = await bridge.send('sch.netlist.get', params);
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);
@@ -161,7 +161,7 @@ Only use this tool when you need a specific netlist export format (Allegro, PADS
 Much smaller than sch_get_netlist — use this for connectivity questions.
 Returns nets (net → pin connections like "U3.2(GND)") and components (designator → part + pin assignments).
 Auto-generated net names (starting with $) are hidden from the nets view but shown in component pin assignments.`,
-		withInstanceParam({
+		withDocumentParam({
 			designators: z
 				.array(z.string())
 				.optional()
@@ -171,8 +171,8 @@ Auto-generated net names (starting with $) are hidden from the nets view but sho
 				.optional()
 				.describe('Only include these nets and components touching them (e.g. ["GND", "VBUS"])'),
 		}),
-		async ({ designators, nets, instance_id }) => {
-			const result = await bridge.send('sch.connectivity.get', { designators, nets, instance_id });
+		async (params) => {
+			const result = await bridge.send('sch.connectivity.get', params);
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);
@@ -184,8 +184,8 @@ Auto-generated net names (starting with $) are hidden from the nets view but sho
 			strict: z.boolean().optional().describe('Whether to run strict DRC checks'),
 			userInterface: z.boolean().optional().describe('Whether to show DRC results in UI'),
 		}),
-		async ({ strict, userInterface, instance_id, fields, filter, limit }) => {
-			const result = await bridge.send('sch.drc.check', { strict, userInterface, instance_id, fields, filter, limit });
+		async (params) => {
+			const result = await bridge.send('sch.drc.check', params);
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);

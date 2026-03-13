@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { WebSocketBridge } from '../bridge';
-import { withInstanceParam } from './query-params';
+import { withDocumentParam } from './query-params';
 
 const RULE_CONFIG_HANDLERS: Record<string, string> = {
 	get_current_name: 'pcb.drc.getCurrentRuleConfigName',
@@ -65,7 +65,7 @@ export function registerPcbDrcTools(server: McpServer, bridge: WebSocketBridge):
 - delete: delete config (configurationName)
 - get_default_name: get default config name
 - set_default: set as default (configurationName)`,
-		withInstanceParam({
+		withDocumentParam({
 			action: z
 				.enum([
 					'get_current_name', 'get_by_name', 'get_all', 'save',
@@ -79,8 +79,8 @@ export function registerPcbDrcTools(server: McpServer, bridge: WebSocketBridge):
 			originalName: z.string().optional().describe('Current name (for rename)'),
 			newName: z.string().optional().describe('New name (for rename)'),
 		}),
-		async ({ action, instance_id, ...params }) => {
-			const result = await bridge.send(RULE_CONFIG_HANDLERS[action], { ...params, instance_id });
+		async ({ action, ...rest }) => {
+			const result = await bridge.send(RULE_CONFIG_HANDLERS[action], rest);
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);
@@ -93,7 +93,7 @@ export function registerPcbDrcTools(server: McpServer, bridge: WebSocketBridge):
 - overwrite_net_by_net: overwrite net-by-net rules (netByNetRules: object)
 - get_region: get region-specific rules
 - overwrite_region: overwrite region rules (regionRules: array of region rule objects)`,
-		withInstanceParam({
+		withDocumentParam({
 			action: z
 				.enum(['overwrite_net', 'get_net_by_net', 'overwrite_net_by_net', 'get_region', 'overwrite_region'])
 				.describe('Action to perform'),
@@ -101,8 +101,8 @@ export function registerPcbDrcTools(server: McpServer, bridge: WebSocketBridge):
 			netByNetRules: z.record(z.string(), z.any()).optional().describe('Net-by-net rules (for overwrite_net_by_net)'),
 			regionRules: z.array(z.record(z.string(), z.any())).optional().describe('Region rules array (for overwrite_region)'),
 		}),
-		async ({ action, instance_id, ...params }) => {
-			const result = await bridge.send(NET_RULES_HANDLERS[action], { ...params, instance_id });
+		async ({ action, ...rest }) => {
+			const result = await bridge.send(NET_RULES_HANDLERS[action], rest);
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);
@@ -116,7 +116,7 @@ export function registerPcbDrcTools(server: McpServer, bridge: WebSocketBridge):
 - rename: rename net class (originalName, newName)
 - add_net: add net(s) to class (netClassName, net: string|string[])
 - remove_net: remove net(s) from class (netClassName, net: string|string[])`,
-		withInstanceParam({
+		withDocumentParam({
 			action: z
 				.enum(['get_all', 'create', 'delete', 'rename', 'add_net', 'remove_net'])
 				.describe('Action to perform'),
@@ -127,8 +127,8 @@ export function registerPcbDrcTools(server: McpServer, bridge: WebSocketBridge):
 			originalName: z.string().optional().describe('Current name (for rename)'),
 			newName: z.string().optional().describe('New name (for rename)'),
 		}),
-		async ({ action, instance_id, ...params }) => {
-			const result = await bridge.send(NET_CLASS_HANDLERS[action], { ...params, instance_id });
+		async ({ action, ...rest }) => {
+			const result = await bridge.send(NET_CLASS_HANDLERS[action], rest);
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);
@@ -141,7 +141,7 @@ export function registerPcbDrcTools(server: McpServer, bridge: WebSocketBridge):
 - delete: delete diff pair (name)
 - rename: rename diff pair (originalName, newName)
 - modify_nets: modify positive/negative net (name, positiveNet and/or negativeNet)`,
-		withInstanceParam({
+		withDocumentParam({
 			action: z
 				.enum(['get_all', 'create', 'delete', 'rename', 'modify_nets'])
 				.describe('Action to perform'),
@@ -151,18 +151,18 @@ export function registerPcbDrcTools(server: McpServer, bridge: WebSocketBridge):
 			originalName: z.string().optional().describe('Current name (for rename)'),
 			newName: z.string().optional().describe('New name (for rename)'),
 		}),
-		async ({ action, name, positiveNet, negativeNet, originalName, newName, instance_id }) => {
+		async ({ action, name, positiveNet, negativeNet, ...rest }) => {
 			if (action === 'modify_nets') {
 				const results: Record<string, unknown> = {};
 				if (positiveNet !== undefined) {
-					results.positive = await bridge.send('pcb.drc.modifyDiffPairPositiveNet', { name, positiveNet, instance_id });
+					results.positive = await bridge.send('pcb.drc.modifyDiffPairPositiveNet', { name, positiveNet, ...rest });
 				}
 				if (negativeNet !== undefined) {
-					results.negative = await bridge.send('pcb.drc.modifyDiffPairNegativeNet', { name, negativeNet, instance_id });
+					results.negative = await bridge.send('pcb.drc.modifyDiffPairNegativeNet', { name, negativeNet, ...rest });
 				}
 				return { content: [{ type: 'text', text: JSON.stringify(results, null, 2) }] };
 			}
-			const result = await bridge.send(DIFF_PAIR_HANDLERS[action], { name, positiveNet, negativeNet, originalName, newName, instance_id });
+			const result = await bridge.send(DIFF_PAIR_HANDLERS[action], { name, positiveNet, negativeNet, ...rest });
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);
@@ -176,7 +176,7 @@ export function registerPcbDrcTools(server: McpServer, bridge: WebSocketBridge):
 - rename: rename group (originalName, newName)
 - add_net: add net(s) to group (name, net: string|string[])
 - remove_net: remove net(s) from group (name, net: string|string[])`,
-		withInstanceParam({
+		withDocumentParam({
 			action: z
 				.enum(['get_all', 'create', 'delete', 'rename', 'add_net', 'remove_net'])
 				.describe('Action to perform'),
@@ -187,8 +187,8 @@ export function registerPcbDrcTools(server: McpServer, bridge: WebSocketBridge):
 			originalName: z.string().optional().describe('Current name (for rename)'),
 			newName: z.string().optional().describe('New name (for rename)'),
 		}),
-		async ({ action, instance_id, ...params }) => {
-			const result = await bridge.send(EQUAL_LENGTH_HANDLERS[action], { ...params, instance_id });
+		async ({ action, ...rest }) => {
+			const result = await bridge.send(EQUAL_LENGTH_HANDLERS[action], rest);
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);
@@ -199,7 +199,7 @@ export function registerPcbDrcTools(server: McpServer, bridge: WebSocketBridge):
 - create: create group (name, padPairs: [[padId1, padId2], ...])
 - delete: delete group (name)
 - rename: rename group (originalName, newName)`,
-		withInstanceParam({
+		withDocumentParam({
 			action: z
 				.enum(['create', 'delete', 'rename'])
 				.describe('Action to perform'),
@@ -211,8 +211,8 @@ export function registerPcbDrcTools(server: McpServer, bridge: WebSocketBridge):
 			originalName: z.string().optional().describe('Current name (for rename)'),
 			newName: z.string().optional().describe('New name (for rename)'),
 		}),
-		async ({ action, instance_id, ...params }) => {
-			const result = await bridge.send(PAD_PAIR_HANDLERS[action], { ...params, instance_id });
+		async ({ action, ...rest }) => {
+			const result = await bridge.send(PAD_PAIR_HANDLERS[action], rest);
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);
