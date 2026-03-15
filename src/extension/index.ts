@@ -1,14 +1,27 @@
 import * as extensionConfig from '../../extension.json';
 import { connectToMcpServers, disconnectFromAllMcpServers, getConnectedPortCount, getInstanceId, startLiveMode, stopLiveMode, isLiveModeActive } from './ws-client';
 
+const AUTO_CONNECT_KEY = 'autoConnect';
+
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-export function activate(status?: 'onStartupFinished', arg?: string): void {}
+export function activate(status?: 'onStartupFinished', arg?: string): void {
+	try {
+		const autoConnect = eda.sys_Storage.getExtensionUserConfig(AUTO_CONNECT_KEY);
+		if (autoConnect) {
+			startLiveMode(extensionConfig.uuid);
+			connectToMcpServers(extensionConfig.uuid);
+		}
+	} catch {
+		// Storage API unavailable or failed — skip auto-connect
+	}
+}
 
 export function connectClaude(): void {
 	const wasLive = isLiveModeActive();
 
 	if (!wasLive) {
 		startLiveMode(extensionConfig.uuid);
+		eda.sys_Storage.setExtensionUserConfig(AUTO_CONNECT_KEY, true).catch(() => {});
 		eda.sys_Message.showToastMessage(
 			'Live mode enabled — scanning for Claude agents...',
 			ESYS_ToastMessageType.SUCCESS,
@@ -39,6 +52,7 @@ export function disconnectClaude(): void {
 	const count = getConnectedPortCount();
 	const wasLive = isLiveModeActive();
 	stopLiveMode();
+	eda.sys_Storage.deleteExtensionUserConfig(AUTO_CONNECT_KEY).catch(() => {});
 	disconnectFromAllMcpServers(extensionConfig.uuid);
 
 	if (count === 0 && !wasLive) {
