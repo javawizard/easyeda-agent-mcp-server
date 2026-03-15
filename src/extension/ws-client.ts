@@ -115,8 +115,13 @@ function wsUrlForPort(port: number): string {
 	return `ws://localhost:${port}?instanceId=${instanceId}`;
 }
 
+// Map<port, agentId> — tracks which agent is connected on each port
 const PORTS_KEY = '__claude_mcp_connected_ports__';
-const connectedPorts: Set<number> = (globalThis as any)[PORTS_KEY] || ((globalThis as any)[PORTS_KEY] = new Set<number>());
+const connectedPorts: Map<number, string> = (globalThis as any)[PORTS_KEY] || ((globalThis as any)[PORTS_KEY] = new Map<number, string>());
+
+// Map<port, timestamp> — last time we received any message from each bridge
+const LAST_RECV_KEY = '__claude_mcp_last_received__';
+const lastReceivedTime: Map<number, number> = (globalThis as any)[LAST_RECV_KEY] || ((globalThis as any)[LAST_RECV_KEY] = new Map<number, number>());
 
 const allHandlers: Record<string, (params: Record<string, any>) => Promise<any>> = {
 	...componentHandlers,
@@ -213,6 +218,48 @@ function handleMessage(extensionUuid: string, port: number, event: MessageEvent<
 	try {
 		const message = typeof event.data === 'string' ? event.data : String(event.data);
 		const request = JSON.parse(message);
+
+		// Record that we received traffic from this bridge (for keepalive)
+		lastReceivedTime.set(port, Date.now());
+
+		// Handle notifications from MCP server (type field, no id)
+		if (request.type === 'pong') {
+			// Keepalive response — lastReceivedTime already updated above
+			return;
+		}
+
+		if (request.type === 'hello') {
+			// Server sends its agentId on connection — store it for dedup
+			connectedPorts.set(port, request.agentId || '');
+			return;
+		}
+
+		if (request.type === 'newAgent') {
+			// A peer MCP server notified us (via the server we're connected to)
+			// that a new agent started — connect to it immediately
+			const newPort = request.port as number;
+			if (newPort && !connectedPorts.has(newPort)) {
+				connectToSinglePort(extensionUuid, newPort);
+			}
+			return;
+		}
+
+		if (request.type === 'shutdown') {
+			connectedPorts.delete(port);
+			adjustScanInterval();
+			try {
+				eda.sys_WebSocket.close(wsIdForPort(port), undefined, undefined, extensionUuid);
+			} catch {
+				// Already closed
+			}
+			eda.sys_Message.showToastMessage(
+				`Claude MCP Server on port ${port} shut down`,
+				ESYS_ToastMessageType.INFO,
+				3,
+			);
+			return;
+		}
+
 		id = request.id;
 		const method: string = request.method;
 		const params: Record<string, any> = request.params || {};
@@ -274,6 +321,7 @@ function sendResponse(extensionUuid: string, port: number, id: string, result?: 
 	} catch {
 		// Send failed — connection is dead, remove from tracked ports
 		connectedPorts.delete(port);
+		adjustScanInterval();
 	}
 }
 
@@ -282,6 +330,7 @@ function sendNotification(extensionUuid: string, port: number, type: string, dat
 		eda.sys_WebSocket.send(wsIdForPort(port), JSON.stringify({ type, data }), extensionUuid);
 	} catch {
 		connectedPorts.delete(port);
+		adjustScanInterval();
 	}
 }
 
@@ -291,7 +340,7 @@ function sendNotification(extensionUuid: string, port: number, type: string, dat
  */
 async function pushInstanceInfoToAll(extensionUuid: string): Promise<void> {
 	const info = await getInstanceInfo();
-	for (const port of connectedPorts) {
+	for (const port of connectedPorts.keys()) {
 		sendNotification(extensionUuid, port, 'instanceInfo', info);
 	}
 }
@@ -314,39 +363,62 @@ function flushConnectionToast(): void {
 
 let noNewServersTimer: ReturnType<typeof setTimeout> | null = null;
 
+// Ports we're currently in the process of connecting to (prevents duplicate
+// attempts when multiple peers notify us about the same new agent).
+const CONNECTING_KEY = '__claude_mcp_connecting_ports__';
+const connectingPorts: Set<number> = (globalThis as any)[CONNECTING_KEY] || ((globalThis as any)[CONNECTING_KEY] = new Set<number>());
+
+/**
+ * Try connecting to a single MCP server port.
+ * Used both by full scan and by peer newAgent notifications.
+ */
+function connectToSinglePort(extensionUuid: string, port: number): void {
+	if (connectedPorts.has(port) || connectingPorts.has(port)) return;
+	connectingPorts.add(port);
+
+	// Clear the connecting flag after 10s if the connection never completes
+	// (e.g. no server on that port — sys_WebSocket.register fails silently)
+	setTimeout(() => connectingPorts.delete(port), 10_000);
+
+	const wsId = wsIdForPort(port);
+	const wsUrl = wsUrlForPort(port);
+	eda.sys_WebSocket.register(
+		wsId,
+		wsUrl,
+		(event: MessageEvent<any>) => handleMessage(extensionUuid, port, event),
+		() => {
+			connectingPorts.delete(port);
+			// agentId will be set when we receive the 'hello' message;
+			// store empty string as placeholder until then
+			connectedPorts.set(port, '');
+			lastReceivedTime.set(port, Date.now());
+			pendingConnectionPorts.push(port);
+			if (connectionToastTimer !== null) {
+				clearTimeout(connectionToastTimer);
+			}
+			connectionToastTimer = setTimeout(flushConnectionToast, 500);
+
+			// Cancel the "no new servers" toast since we found one
+			if (noNewServersTimer !== null) {
+				clearTimeout(noNewServersTimer);
+				noNewServersTimer = null;
+			}
+
+			// Push instance info to the newly connected server after a short delay
+			// (give the server a moment to finish its connection setup)
+			setTimeout(() => pushInstanceInfoToAll(extensionUuid), 200);
+
+			// Connection count changed — adjust scan interval if in live mode
+			adjustScanInterval();
+		},
+	);
+}
+
 export function connectToMcpServers(extensionUuid: string): void {
 	const countBefore = connectedPorts.size;
 
 	for (let i = 0; i < PORT_RANGE_SIZE; i++) {
-		const port = PORT_RANGE_START + i;
-		if (connectedPorts.has(port)) {
-			continue;
-		}
-		const wsId = wsIdForPort(port);
-		const wsUrl = wsUrlForPort(port);
-		eda.sys_WebSocket.register(
-			wsId,
-			wsUrl,
-			(event: MessageEvent<any>) => handleMessage(extensionUuid, port, event),
-			() => {
-				connectedPorts.add(port);
-				pendingConnectionPorts.push(port);
-				if (connectionToastTimer !== null) {
-					clearTimeout(connectionToastTimer);
-				}
-				connectionToastTimer = setTimeout(flushConnectionToast, 500);
-
-				// Cancel the "no new servers" toast since we found one
-				if (noNewServersTimer !== null) {
-					clearTimeout(noNewServersTimer);
-					noNewServersTimer = null;
-				}
-
-				// Push instance info to the newly connected server after a short delay
-				// (give the server a moment to finish its connection setup)
-				setTimeout(() => pushInstanceInfoToAll(extensionUuid), 200);
-			},
-		);
+		connectToSinglePort(extensionUuid, PORT_RANGE_START + i);
 	}
 
 	// If no new connections arrive within 2s, show a "no new servers" toast
@@ -368,7 +440,7 @@ export function connectToMcpServers(extensionUuid: string): void {
 }
 
 export function disconnectFromAllMcpServers(extensionUuid: string): void {
-	for (const port of connectedPorts) {
+	for (const port of connectedPorts.keys()) {
 		try {
 			eda.sys_WebSocket.close(wsIdForPort(port), undefined, undefined, extensionUuid);
 		} catch {
@@ -376,6 +448,7 @@ export function disconnectFromAllMcpServers(extensionUuid: string): void {
 		}
 	}
 	connectedPorts.clear();
+	lastReceivedTime.clear();
 }
 
 export function getConnectedPortCount(): number {
@@ -383,5 +456,121 @@ export function getConnectedPortCount(): number {
 }
 
 export function getConnectedPorts(): number[] {
-	return [...connectedPorts];
+	return [...connectedPorts.keys()];
+}
+
+// Keepalive: detect dead connections by pinging bridges that have gone quiet.
+// If no message received in QUIET_THRESHOLD_MS, send a ping.
+// If still no message after DEAD_THRESHOLD_MS total, drop the connection.
+const HEARTBEAT_INTERVAL_MS = 90_000;
+const QUIET_THRESHOLD_MS = 90_000;
+const DEAD_THRESHOLD_MS = 150_000;
+const HEARTBEAT_TIMER_KEY = '__claude_mcp_heartbeat_timer__';
+
+function runHeartbeat(extensionUuid: string): void {
+	const now = Date.now();
+	for (const port of [...connectedPorts.keys()]) {
+		const lastRecv = lastReceivedTime.get(port) ?? 0;
+		const silenceMs = now - lastRecv;
+
+		if (silenceMs >= DEAD_THRESHOLD_MS) {
+			// No response to our ping — connection is dead
+			connectedPorts.delete(port);
+			lastReceivedTime.delete(port);
+			try {
+				eda.sys_WebSocket.close(wsIdForPort(port), undefined, undefined, extensionUuid);
+			} catch {
+				// Already gone
+			}
+			eda.sys_Message.showToastMessage(
+				`Lost connection to Claude MCP Server on port ${port}`,
+				ESYS_ToastMessageType.WARNING,
+				5,
+			);
+			adjustScanInterval();
+		} else if (silenceMs >= QUIET_THRESHOLD_MS) {
+			// Bridge has been quiet — send a ping to check
+			try {
+				eda.sys_WebSocket.send(wsIdForPort(port), JSON.stringify({ type: 'ping' }), extensionUuid);
+			} catch {
+				// Send failed — connection already dead
+				connectedPorts.delete(port);
+				lastReceivedTime.delete(port);
+				adjustScanInterval();
+			}
+		}
+	}
+}
+
+function startHeartbeat(extensionUuid: string): void {
+	const g = globalThis as any;
+	if (g[HEARTBEAT_TIMER_KEY]) {
+		clearInterval(g[HEARTBEAT_TIMER_KEY]);
+	}
+	g[HEARTBEAT_TIMER_KEY] = setInterval(() => runHeartbeat(extensionUuid), HEARTBEAT_INTERVAL_MS);
+}
+
+function stopHeartbeat(): void {
+	const g = globalThis as any;
+	if (g[HEARTBEAT_TIMER_KEY]) {
+		clearInterval(g[HEARTBEAT_TIMER_KEY]);
+		g[HEARTBEAT_TIMER_KEY] = null;
+	}
+}
+
+// Live mode: periodic background scanning for new MCP servers
+// Adaptive intervals: scan eagerly (30s) when no connections, slowly (3min)
+// when connected (peer notifications handle the fast path).
+const LIVE_MODE_KEY = '__claude_mcp_live_mode__';
+const LIVE_TIMER_KEY = '__claude_mcp_live_timer__';
+const LIVE_UUID_KEY = '__claude_mcp_live_uuid__';
+const SCAN_INTERVAL_EAGER_MS = 30_000;   // No connections — scan frequently
+const SCAN_INTERVAL_RELAXED_MS = 180_000; // Has connections — peer notifications cover fast discovery
+
+function currentScanInterval(): number {
+	return connectedPorts.size > 0 ? SCAN_INTERVAL_RELAXED_MS : SCAN_INTERVAL_EAGER_MS;
+}
+
+/**
+ * Re-evaluate and adjust the scan interval based on current connection count.
+ * Called when connections are gained or lost.
+ */
+function adjustScanInterval(): void {
+	const g = globalThis as any;
+	if (!g[LIVE_MODE_KEY] || !g[LIVE_UUID_KEY]) return;
+
+	const extensionUuid = g[LIVE_UUID_KEY] as string;
+	if (g[LIVE_TIMER_KEY]) {
+		clearInterval(g[LIVE_TIMER_KEY]);
+	}
+	g[LIVE_TIMER_KEY] = setInterval(() => {
+		connectToMcpServers(extensionUuid);
+	}, currentScanInterval());
+}
+
+export function startLiveMode(extensionUuid: string): void {
+	const g = globalThis as any;
+	if (g[LIVE_TIMER_KEY]) {
+		clearInterval(g[LIVE_TIMER_KEY]);
+	}
+	g[LIVE_MODE_KEY] = true;
+	g[LIVE_UUID_KEY] = extensionUuid;
+	g[LIVE_TIMER_KEY] = setInterval(() => {
+		connectToMcpServers(extensionUuid);
+	}, currentScanInterval());
+	startHeartbeat(extensionUuid);
+}
+
+export function stopLiveMode(): void {
+	const g = globalThis as any;
+	g[LIVE_MODE_KEY] = false;
+	if (g[LIVE_TIMER_KEY]) {
+		clearInterval(g[LIVE_TIMER_KEY]);
+		g[LIVE_TIMER_KEY] = null;
+	}
+	stopHeartbeat();
+}
+
+export function isLiveModeActive(): boolean {
+	return !!(globalThis as any)[LIVE_MODE_KEY];
 }

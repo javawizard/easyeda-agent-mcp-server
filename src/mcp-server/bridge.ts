@@ -1,5 +1,8 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import type { IncomingMessage } from 'http';
+import { randomBytes } from 'crypto';
+
+const PEER_ORIGIN = 'http://easyeda-agent.internal';
 
 const ALLOWED_ORIGIN_PATTERNS = [
 	/^https?:\/\/([a-z0-9-]+\.)*easyeda\.com(:\d+)?$/,
@@ -9,6 +12,7 @@ const ALLOWED_ORIGIN_PATTERNS = [
 function isAllowedOrigin(origin: string | undefined): boolean {
 	if (!origin) return false;
 	if (process.env.EDA_WS_ALLOW_ALL_ORIGINS === '1') return true;
+	if (origin === PEER_ORIGIN) return true;
 	return ALLOWED_ORIGIN_PATTERNS.some((pattern) => pattern.test(origin));
 }
 
@@ -51,9 +55,11 @@ export class WebSocketBridge {
 	private pendingRequests = new Map<string, PendingRequest>();
 	private requestIdCounter = 0;
 	private readonly timeout: number;
+	readonly agentId: string;
 
 	constructor(private readonly port: number = 15168, timeout = 30000) {
 		this.timeout = timeout;
+		this.agentId = randomBytes(8).toString('hex');
 	}
 
 	getPort(): number {
@@ -110,6 +116,26 @@ export class WebSocketBridge {
 			});
 
 			this.wss.on('connection', (ws, req) => {
+				const origin = req.headers.origin;
+
+				// Peer connections: short-lived, just relay newAgent notifications
+				if (origin === PEER_ORIGIN) {
+					ws.on('message', (data) => {
+						try {
+							const message = JSON.parse(data.toString());
+							if (message.type === 'newAgent') {
+								console.error(`[Bridge] Peer notification: new agent on port ${message.port} (agentId: ${message.agentId})`);
+								this.broadcastToExtensions({ type: 'newAgent', port: message.port, agentId: message.agentId });
+							}
+						} catch {
+							// Ignore malformed peer messages
+						}
+					});
+					ws.on('close', () => {});
+					ws.on('error', () => {});
+					return;
+				}
+
 				const url = new URL(req.url || '/', `http://localhost:${this.port}`);
 				const instanceId = url.searchParams.get('instanceId');
 
@@ -135,6 +161,11 @@ export class WebSocketBridge {
 						const message = JSON.parse(data.toString());
 
 						// Check if this is a notification (has 'type' field) vs a response (has 'id' field)
+						if (message.type === 'ping') {
+							ws.send(JSON.stringify({ type: 'pong' }));
+							return;
+						}
+
 						if (message.type === 'instanceInfo') {
 							this.handleInstanceInfo(instanceId, message.data);
 							return;
@@ -163,6 +194,9 @@ export class WebSocketBridge {
 				ws.on('error', (err) => {
 					console.error(`[Bridge] Client error (instance: ${instanceId}):`, err);
 				});
+
+				// Send agentId to the extension so it can deduplicate connections
+				ws.send(JSON.stringify({ type: 'hello', agentId: this.agentId }));
 
 				// Request instance info from the newly connected extension
 				this.requestInstanceInfo(instanceId).catch((err) => {
@@ -322,6 +356,52 @@ export class WebSocketBridge {
 		}
 	}
 
+	/**
+	 * Send a JSON message to all connected EasyEDA extensions.
+	 */
+	private broadcastToExtensions(message: Record<string, unknown>): void {
+		const json = JSON.stringify(message);
+		for (const [, client] of this.clients) {
+			try {
+				if (client.ws.readyState === WebSocket.OPEN) {
+					client.ws.send(json);
+				}
+			} catch {
+				// Best-effort
+			}
+		}
+	}
+
+	/**
+	 * Notify all peer MCP servers in the port range that this agent has started.
+	 * Connects briefly to each, sends a newAgent message, then disconnects.
+	 */
+	notifyPeers(portStart: number, portCount: number): void {
+		const notification = JSON.stringify({
+			type: 'newAgent',
+			port: this.port,
+			agentId: this.agentId,
+		});
+
+		for (let i = 0; i < portCount; i++) {
+			const peerPort = portStart + i;
+			if (peerPort === this.port) continue;
+
+			const peerWs = new WebSocket(`ws://127.0.0.1:${peerPort}`, {
+				origin: PEER_ORIGIN,
+			});
+
+			peerWs.on('open', () => {
+				peerWs.send(notification);
+				peerWs.close();
+				console.error(`[Bridge] Notified peer on port ${peerPort}`);
+			});
+
+			// Silently ignore connection failures (no peer on that port)
+			peerWs.on('error', () => {});
+		}
+	}
+
 	async stop(): Promise<void> {
 		for (const [id, pending] of this.pendingRequests) {
 			clearTimeout(pending.timer);
@@ -329,7 +409,16 @@ export class WebSocketBridge {
 			this.pendingRequests.delete(id);
 		}
 
+		// Notify all connected extensions before closing
+		const shutdownMsg = JSON.stringify({ type: 'shutdown', agentId: this.agentId });
 		for (const [, client] of this.clients) {
+			try {
+				if (client.ws.readyState === WebSocket.OPEN) {
+					client.ws.send(shutdownMsg);
+				}
+			} catch {
+				// Best-effort
+			}
 			client.ws.close();
 		}
 		this.clients.clear();

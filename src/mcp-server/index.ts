@@ -115,6 +115,9 @@ async function main() {
 	console.error('[MCP] EasyEDA Agent MCP Server started');
 	console.error(`[MCP] WebSocket Server on port ${bridge.getPort()}, waiting for EDA Pro Extension...`);
 
+	// Notify any peer MCP servers so their connected extensions discover us immediately
+	bridge.notifyPeers(PORT_RANGE_START, PORT_RANGE_SIZE);
+
 	process.on('SIGINT', async () => {
 		await bridge.stop();
 		process.exit(0);

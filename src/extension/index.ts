@@ -1,20 +1,30 @@
 import * as extensionConfig from '../../extension.json';
-import { connectToMcpServers, disconnectFromAllMcpServers, getConnectedPortCount, getInstanceId } from './ws-client';
+import { connectToMcpServers, disconnectFromAllMcpServers, getConnectedPortCount, getInstanceId, startLiveMode, stopLiveMode, isLiveModeActive } from './ws-client';
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function activate(status?: 'onStartupFinished', arg?: string): void {}
 
 export function connectClaude(): void {
-	const alreadyConnected = getConnectedPortCount();
-	if (alreadyConnected > 0) {
+	const wasLive = isLiveModeActive();
+
+	if (!wasLive) {
+		startLiveMode(extensionConfig.uuid);
 		eda.sys_Message.showToastMessage(
-			`Scanning for new Claude MCP Servers... (${alreadyConnected} already connected)`,
+			'Live mode enabled — scanning for Claude agents...',
+			ESYS_ToastMessageType.SUCCESS,
+			5,
+		);
+	} else {
+		const alreadyConnected = getConnectedPortCount();
+		eda.sys_Message.showToastMessage(
+			alreadyConnected > 0
+				? `Rescanning... (${alreadyConnected} already connected)`
+				: 'Rescanning for Claude agents...',
 			ESYS_ToastMessageType.INFO,
 			3,
 		);
-	} else {
-		eda.sys_Message.showToastMessage('Scanning for Claude MCP Servers...', ESYS_ToastMessageType.INFO, 3);
 	}
+
 	try {
 		connectToMcpServers(extensionConfig.uuid);
 	} catch (err: any) {
@@ -27,13 +37,16 @@ export function connectClaude(): void {
 
 export function disconnectClaude(): void {
 	const count = getConnectedPortCount();
-	if (count === 0) {
+	const wasLive = isLiveModeActive();
+	stopLiveMode();
+	disconnectFromAllMcpServers(extensionConfig.uuid);
+
+	if (count === 0 && !wasLive) {
 		eda.sys_Message.showToastMessage('Not connected to any Claude MCP Servers', ESYS_ToastMessageType.WARNING, 3);
 		return;
 	}
-	disconnectFromAllMcpServers(extensionConfig.uuid);
 	eda.sys_Message.showToastMessage(
-		`Disconnected from ${count} Claude MCP Server${count === 1 ? '' : 's'}`,
+		`Live mode disabled — disconnected from ${count} server${count === 1 ? '' : 's'}`,
 		ESYS_ToastMessageType.INFO,
 		3,
 	);

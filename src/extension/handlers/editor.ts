@@ -1,10 +1,28 @@
+/**
+ * Recursively strip keys that are useless to LLMs (e.g. titleBlockData, showTitleBlock).
+ * Mutates in place for efficiency — callers should pass a fresh copy if needed.
+ */
+function stripBloat(obj: any): any {
+	if (obj == null || typeof obj !== 'object') return obj;
+	if (Array.isArray(obj)) {
+		for (const item of obj) stripBloat(item);
+		return obj;
+	}
+	delete obj.titleBlockData;
+	delete obj.showTitleBlock;
+	for (const val of Object.values(obj)) {
+		if (val && typeof val === 'object') stripBloat(val);
+	}
+	return obj;
+}
+
 export const editorHandlers: Record<string, (params: Record<string, any>) => Promise<any>> = {
 	'editor.project.getStructure': async () => {
 		const [project, currentDoc] = await Promise.all([
 			eda.dmt_Project.getCurrentProjectInfo(),
 			eda.dmt_SelectControl.getCurrentDocumentInfo(),
 		]);
-		return { project, currentDocument: currentDoc };
+		return { project: stripBloat(project), currentDocument: currentDoc };
 	},
 
 	'editor.getCurrentDocument': async () => {
