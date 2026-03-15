@@ -448,6 +448,7 @@ export function disconnectFromAllMcpServers(extensionUuid: string): void {
 		}
 	}
 	connectedPorts.clear();
+	connectingPorts.clear();
 	lastReceivedTime.clear();
 }
 
@@ -460,11 +461,13 @@ export function getConnectedPorts(): number[] {
 }
 
 // Keepalive: detect dead connections by pinging bridges that have gone quiet.
-// If no message received in QUIET_THRESHOLD_MS, send a ping.
-// If still no message after DEAD_THRESHOLD_MS total, drop the connection.
+// Checks run every HEARTBEAT_INTERVAL_MS. If no message received in
+// QUIET_THRESHOLD_MS, send a ping. If still no message after DEAD_THRESHOLD_MS
+// total silence, drop the connection. DEAD - QUIET must be > HEARTBEAT so the
+// bridge gets at least one full interval to respond before being dropped.
 const HEARTBEAT_INTERVAL_MS = 90_000;
-const QUIET_THRESHOLD_MS = 90_000;
-const DEAD_THRESHOLD_MS = 150_000;
+const QUIET_THRESHOLD_MS = 60_000;
+const DEAD_THRESHOLD_MS = 180_000;
 const HEARTBEAT_TIMER_KEY = '__claude_mcp_heartbeat_timer__';
 
 function runHeartbeat(extensionUuid: string): void {
