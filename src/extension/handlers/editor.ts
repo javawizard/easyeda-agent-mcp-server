@@ -16,6 +16,18 @@ function stripBloat(obj: any): any {
 	return obj;
 }
 
+async function fileToBase64(file: File): Promise<string> {
+	return new Promise((resolve, reject) => {
+		const reader = new FileReader();
+		reader.onload = () => {
+			const dataUrl = reader.result as string;
+			resolve(dataUrl.split(',')[1] || '');
+		};
+		reader.onerror = () => reject(new Error('Failed to read file'));
+		reader.readAsDataURL(file);
+	});
+}
+
 async function blobToBase64(blob: Blob): Promise<string> {
 	return new Promise((resolve, reject) => {
 		const reader = new FileReader();
@@ -26,10 +38,6 @@ async function blobToBase64(blob: Blob): Promise<string> {
 		reader.onerror = () => reject(new Error('Failed to read image blob'));
 		reader.readAsDataURL(blob);
 	});
-}
-
-function delay(ms: number): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export const editorHandlers: Record<string, (params: Record<string, any>) => Promise<any>> = {
@@ -110,79 +118,47 @@ export const editorHandlers: Record<string, (params: Record<string, any>) => Pro
 	},
 
 	'editor.captureScreenshot': async (params) => {
-		const mode: string = params.mode || 'full';
-
 		const doc = await eda.dmt_SelectControl.getCurrentDocumentInfo();
 		const docType = doc?.documentType; // 1=sch, 3=pcb
 
-		// Adjust viewport based on mode
-		let viewportInfo: any = undefined;
-		let savedSelection: string[] | undefined;
-
-		if (mode === 'full') {
-			viewportInfo = await eda.dmt_EditorControl.zoomToAllPrimitives();
-		} else if (mode === 'board' && docType === 3) {
-			await eda.dmt_EditorControl.zoomToBoardOutline();
-		} else if (mode === 'board' && docType !== 3) {
-			// Fall back to full for schematics
-			viewportInfo = await eda.dmt_EditorControl.zoomToAllPrimitives();
-		} else if (mode === 'region') {
-			const { left, right, top, bottom } = params;
-			if (left == null || right == null || top == null || bottom == null) {
-				throw new Error('Region mode requires left, right, top, bottom parameters');
+		if (docType === 1) {
+			// Schematic: use getExportDocumentFile for reliable PNG export
+			const theme = params.theme || 'Default';
+			const scope = params.scope || 'Current Schematic Page';
+			const file = await eda.sch_ManufactureData.getExportDocumentFile(
+				'screenshot.png',
+				'PNG' as any,
+				{ theme, lineWidth: 'Default' },
+				scope,
+			);
+			if (!file) {
+				throw new Error('Failed to export schematic image');
 			}
-			await eda.dmt_EditorControl.zoomToRegion(left, right, top, bottom);
-		} else if (mode === 'components') {
-			const primitiveIds: string[] = params.primitiveIds;
-			if (!primitiveIds || primitiveIds.length === 0) {
-				throw new Error('Components mode requires a non-empty primitiveIds array');
-			}
-
-			// Save current selection
-			if (docType === 3) {
-				savedSelection = await eda.pcb_SelectControl.getAllSelectedPrimitives_PrimitiveId();
-				await eda.pcb_SelectControl.doSelectPrimitives(primitiveIds);
-			} else if (docType === 1) {
-				savedSelection = await eda.sch_SelectControl.getAllSelectedPrimitives_PrimitiveId();
-				await eda.sch_SelectControl.doSelectPrimitives(primitiveIds);
-			}
-
-			viewportInfo = await eda.dmt_EditorControl.zoomToSelectedPrimitives();
-		}
-		// mode === 'current' — no viewport change
-
-		// Give the renderer a moment to finish redrawing after viewport change
-		if (mode !== 'current') {
-			await delay(500);
+			const base64 = await fileToBase64(file);
+			return { image: base64, mimeType: 'image/png', size: file.size };
 		}
 
-		const blob = await eda.dmt_EditorControl.getCurrentRenderedAreaImage();
-		if (!blob) {
-			throw new Error('Failed to capture screenshot — no image returned');
-		}
-
-		// Restore previous selection if we changed it
-		if (mode === 'components' && savedSelection !== undefined) {
-			if (docType === 3) {
-				await eda.pcb_SelectControl.clearSelected();
-				if (savedSelection.length > 0) {
-					await eda.pcb_SelectControl.doSelectPrimitives(savedSelection);
+		if (docType === 3) {
+			// PCB: try canvas capture first, fall back to PDF export
+			try {
+				const blob = await eda.dmt_EditorControl.getCurrentRenderedAreaImage();
+				if (blob && blob.size > 0) {
+					const base64 = await blobToBase64(blob);
+					return { image: base64, mimeType: 'image/png', size: blob.size };
 				}
-			} else if (docType === 1) {
-				eda.sch_SelectControl.clearSelected();
-				if (savedSelection.length > 0) {
-					await eda.sch_SelectControl.doSelectPrimitives(savedSelection);
-				}
+			} catch {
+				// Canvas capture not available — fall back to PDF
 			}
+
+			// PDF fallback
+			const file = await eda.pcb_ManufactureData.getPdfFile('screenshot.pdf');
+			if (!file) {
+				throw new Error('Failed to export PCB image');
+			}
+			const base64 = await fileToBase64(file);
+			return { image: base64, mimeType: 'application/pdf', size: file.size, format: 'pdf' };
 		}
 
-		const base64 = await blobToBase64(blob);
-
-		return {
-			image: base64,
-			mimeType: 'image/png',
-			size: blob.size,
-			viewport: viewportInfo || undefined,
-		};
+		throw new Error(`Cannot capture screenshot for document type ${docType ?? 'unknown'} — open a schematic or PCB first`);
 	},
 };

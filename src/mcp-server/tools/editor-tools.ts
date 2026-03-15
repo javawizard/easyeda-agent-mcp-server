@@ -49,42 +49,39 @@ export function registerEditorTools(server: McpServer, bridge: WebSocketBridge):
 	server.tool(
 		'editor_capture_screenshot',
 		[
-			'Capture a screenshot of the current design view as a PNG image.',
-			'Modes:',
-			'  - "full": Zoom to fit all primitives, then capture (default)',
-			'  - "board": Zoom to PCB board outline, then capture (PCB only; falls back to full for schematics)',
-			'  - "region": Zoom to a specific coordinate region, then capture (requires left/right/top/bottom)',
-			'  - "components": Select specific primitives, zoom to fit them, capture, then restore previous selection',
-			'  - "current": Capture the current view as-is without changing zoom',
-			'Use "full" or "board" for an overview, "components" to focus on specific parts, "region" for exact coordinates.',
-		].join('\n'),
+			'Capture a screenshot of the current design as an image.',
+			'For schematics: exports as PNG using the document export API. Use "theme" to control appearance and "scope" to control what is captured.',
+			'For PCBs: attempts canvas capture (PNG), falls back to PDF export if unavailable.',
+			'Pass a "document" parameter to capture a specific tab without manually switching.',
+		].join(' '),
 		withInstanceParam({
-			mode: z.enum(['full', 'board', 'region', 'components', 'current']).default('full')
-				.describe('Screenshot framing mode'),
-			left: z.number().optional().describe('Left bound for region mode'),
-			right: z.number().optional().describe('Right bound for region mode'),
-			top: z.number().optional().describe('Top bound for region mode'),
-			bottom: z.number().optional().describe('Bottom bound for region mode'),
-			primitiveIds: z.array(z.string()).optional()
-				.describe('Primitive IDs to frame for components mode (from get_all_components, etc.)'),
+			theme: z.enum(['Default', 'White on Black', 'Black on White']).default('Default')
+				.describe('Color theme for schematic export'),
+			scope: z.enum(['Current Schematic Page', 'Current Schematic', 'All Schematic']).default('Current Schematic Page')
+				.describe('What to include in the schematic export'),
 		}),
-		async ({ mode, left, right, top, bottom, primitiveIds, instance_id }) => {
+		async ({ theme, scope, instance_id }) => {
 			const result = await bridge.send('editor.captureScreenshot', {
-				mode, left, right, top, bottom, primitiveIds, instance_id,
-			}) as { image: string; mimeType: string; size: number; viewport?: any };
+				theme, scope, instance_id,
+			}) as { image: string; mimeType: string; size: number; format?: string };
 
-			const content: Array<{ type: 'image'; data: string; mimeType: string } | { type: 'text'; text: string }> = [
-				{ type: 'image' as const, data: result.image, mimeType: result.mimeType },
-			];
-
-			if (result.viewport) {
-				content.push({
-					type: 'text' as const,
-					text: `Viewport bounds: ${JSON.stringify(result.viewport)}`,
-				});
+			if (result.mimeType === 'application/pdf') {
+				// Can't display PDFs inline — return as text with base64 data
+				return {
+					content: [{
+						type: 'text' as const,
+						text: `PCB screenshot exported as PDF (${result.size} bytes). Canvas capture was not available.\n\nTo view: save the base64 data below to a .pdf file.\n\nBase64 data (${result.image.length} chars): [PDF data omitted — use pcb_export tool to save to disk instead]`,
+					}],
+				};
 			}
 
-			return { content };
+			return {
+				content: [{
+					type: 'image' as const,
+					data: result.image,
+					mimeType: result.mimeType,
+				}],
+			};
 		},
 	);
 }
