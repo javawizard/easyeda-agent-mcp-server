@@ -16,29 +16,15 @@ function stripBloat(obj: any): any {
 	return obj;
 }
 
-async function fileToBase64(file: File): Promise<string> {
-	return new Promise((resolve, reject) => {
-		const reader = new FileReader();
-		reader.onload = () => {
-			const dataUrl = reader.result as string;
-			resolve(dataUrl.split(',')[1] || '');
-		};
-		reader.onerror = () => reject(new Error('Failed to read file'));
-		reader.readAsDataURL(file);
-	});
-}
-
-async function blobToBase64(blob: Blob): Promise<string> {
-	return new Promise((resolve, reject) => {
-		const reader = new FileReader();
-		reader.onload = () => {
-			const dataUrl = reader.result as string;
-			resolve(dataUrl.split(',')[1] || '');
-		};
-		reader.onerror = () => reject(new Error('Failed to read image blob'));
-		reader.readAsDataURL(blob);
-	});
-}
+// Screenshot/image capture is NOT implemented. As of 2026-03-15, all three
+// candidate EasyEDA Pro APIs fail in the web app:
+//   - sch_ManufactureData.getExportDocumentFile() — hangs forever (never resolves),
+//     regardless of file type (PNG/SVG/PDF) or parameters. The function exists and
+//     is callable, but the returned Promise never settles.
+//   - pcb_ManufactureData.getPdfFile() — same behavior (never resolves).
+//   - dmt_EditorControl.getCurrentRenderedAreaImage() — returns undefined immediately.
+// These APIs may work in the desktop Electron app but not the web version.
+// Reported to EasyEDA Pro engineering (Haidy @ LCSC/JLCPCB).
 
 export const editorHandlers: Record<string, (params: Record<string, any>) => Promise<any>> = {
 	'editor.project.getStructure': async () => {
@@ -115,50 +101,5 @@ export const editorHandlers: Record<string, (params: Record<string, any>) => Pro
 		}
 
 		return { tabs, splitScreenTree: tree };
-	},
-
-	'editor.captureScreenshot': async (params) => {
-		const doc = await eda.dmt_SelectControl.getCurrentDocumentInfo();
-		const docType = doc?.documentType; // 1=sch, 3=pcb
-
-		if (docType === 1) {
-			// Schematic: use getExportDocumentFile for reliable PNG export
-			const theme = params.theme || 'Default';
-			const scope = params.scope || 'Current Schematic Page';
-			const file = await eda.sch_ManufactureData.getExportDocumentFile(
-				'screenshot.png',
-				'PNG' as any,
-				{ theme, lineWidth: 'Default' },
-				scope,
-			);
-			if (!file) {
-				throw new Error('Failed to export schematic image');
-			}
-			const base64 = await fileToBase64(file);
-			return { image: base64, mimeType: 'image/png', size: file.size };
-		}
-
-		if (docType === 3) {
-			// PCB: try canvas capture first, fall back to PDF export
-			try {
-				const blob = await eda.dmt_EditorControl.getCurrentRenderedAreaImage();
-				if (blob && blob.size > 0) {
-					const base64 = await blobToBase64(blob);
-					return { image: base64, mimeType: 'image/png', size: blob.size };
-				}
-			} catch {
-				// Canvas capture not available — fall back to PDF
-			}
-
-			// PDF fallback
-			const file = await eda.pcb_ManufactureData.getPdfFile('screenshot.pdf');
-			if (!file) {
-				throw new Error('Failed to export PCB image');
-			}
-			const base64 = await fileToBase64(file);
-			return { image: base64, mimeType: 'application/pdf', size: file.size, format: 'pdf' };
-		}
-
-		throw new Error(`Cannot capture screenshot for document type ${docType ?? 'unknown'} — open a schematic or PCB first`);
 	},
 };
