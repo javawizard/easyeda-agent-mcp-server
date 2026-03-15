@@ -43,7 +43,8 @@ Note: name often contains EasyEDA template expressions like ={Manufacturer Part}
 		'sch_get_component_pins',
 		`Get all pins of a schematic component by its primitive ID.
 Pin fields: primitiveId, pinNumber, name, net, x, y, rotation.
-Each pin includes a net field with the net name it is connected to (empty string if unconnected).`,
+Each pin includes a net field with the net name it is connected to (empty string if unconnected).
+Pins connected to $-prefixed nets (like $R11_1) are on unnamed nets that still carry real signals — use sch_get_connectivity with that net name to see what else is connected.`,
 		withQueryParams({
 			primitiveId: z.string().describe('The component primitive ID'),
 		}),
@@ -160,7 +161,9 @@ Only use this tool when you need a specific netlist export format (Allegro, PADS
 		`Get compact connectivity data: which nets connect which component pins, with resolved part names.
 Much smaller than sch_get_netlist — use this for connectivity questions.
 Returns nets (net → pin connections like "U3.2(GND)") and components (designator → part + pin assignments).
-Auto-generated net names (starting with $) are hidden from the nets view but shown in component pin assignments.`,
+Auto-generated net names (starting with $) are hidden from the nets section but still appear in component pin assignments.
+IMPORTANT: $-prefixed nets (like $R11_1, $U3_7) represent real electrical connections — they are unnamed nets where the designer didn't assign a net label. When investigating a component's full circuit context, you MUST look at $-prefixed nets in its pin assignments and trace them to see what else is connected. These often carry critical signals (reset lines, boot pins, enable pins) that would otherwise be invisible.
+Use the depth parameter (default 1) to automatically trace through $-prefixed nets and discover indirect connections. For example, depth=2 with designators=["U3"] finds U3's neighbors through unnamed nets — great for finding reset/boot/enable circuitry that connects indirectly.`,
 		withDocumentParam({
 			designators: z
 				.array(z.string())
@@ -170,6 +173,13 @@ Auto-generated net names (starting with $) are hidden from the nets view but sho
 				.array(z.string())
 				.optional()
 				.describe('Only include these nets and components touching them (e.g. ["GND", "VBUS"])'),
+			depth: z
+				.number()
+				.int()
+				.min(1)
+				.max(5)
+				.optional()
+				.describe('How many hops to trace through $-prefixed (unnamed) nets from the specified designators. depth=1 (default) shows only direct connections. depth=2 follows unnamed nets one hop out to find indirectly connected components (e.g. buttons, regulators connected through resistors). Only used with designators parameter.'),
 		}),
 		async (params) => {
 			const result = await bridge.send('sch.connectivity.get', params);

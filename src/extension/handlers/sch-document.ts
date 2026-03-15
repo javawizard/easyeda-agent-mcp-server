@@ -26,7 +26,8 @@ export const schDocumentHandlers: Record<string, (params: Record<string, any>) =
 	},
 
 	'sch.connectivity.get': async (params) => {
-		const designatorFilter: Set<string> | undefined = params.designators
+		const depth: number = (params.depth as number) || 1;
+		let designatorFilter: Set<string> | undefined = params.designators
 			? new Set(params.designators as string[])
 			: undefined;
 		const netFilter: Set<string> | undefined = params.nets
@@ -39,7 +40,7 @@ export const schDocumentHandlers: Record<string, (params: Record<string, any>) =
 			(eda.sch_PrimitiveComponent as any).getAll('part', true),
 		]);
 
-		// 2. Build uniqueId → primitiveId map
+		// 2. Build uniqueId → primitiveId map and designator → uniqueId map
 		const uniqueToPrimitive: Record<string, string> = {};
 		if (Array.isArray(allComponents)) {
 			for (const comp of allComponents) {
@@ -47,6 +48,50 @@ export const schDocumentHandlers: Record<string, (params: Record<string, any>) =
 				if (c.uniqueId && c.primitiveId) {
 					uniqueToPrimitive[c.uniqueId] = c.primitiveId;
 				}
+			}
+		}
+
+		// 2b. If depth > 1 and designators specified, expand designator set by BFS through $-prefixed nets
+		if (designatorFilter && depth > 1) {
+			// Build lookup indices over the full netlist
+			// netName → set of designators on that net
+			const netToDesignators: Record<string, Set<string>> = {};
+			// designator → set of $-prefixed nets the component is on
+			const designatorToDollarNets: Record<string, Set<string>> = {};
+
+			for (const [uniqueId, entry] of Object.entries(netlist)) {
+				if (!uniqueToPrimitive[uniqueId]) continue;
+				for (const [, netName] of Object.entries(entry.pins)) {
+					if (!netName) continue;
+					if (!netToDesignators[netName]) netToDesignators[netName] = new Set();
+					netToDesignators[netName].add(entry.designator);
+					if (netName.startsWith('$')) {
+						if (!designatorToDollarNets[entry.designator]) designatorToDollarNets[entry.designator] = new Set();
+						designatorToDollarNets[entry.designator].add(netName);
+					}
+				}
+			}
+
+			// BFS: expand through $-prefixed nets
+			let frontier = new Set(designatorFilter);
+			for (let hop = 1; hop < depth; hop++) {
+				const nextFrontier = new Set<string>();
+				for (const des of frontier) {
+					const dollarNets = designatorToDollarNets[des];
+					if (!dollarNets) continue;
+					for (const net of dollarNets) {
+						const neighbors = netToDesignators[net];
+						if (!neighbors) continue;
+						for (const neighbor of neighbors) {
+							if (!designatorFilter.has(neighbor)) {
+								nextFrontier.add(neighbor);
+								designatorFilter.add(neighbor);
+							}
+						}
+					}
+				}
+				if (nextFrontier.size === 0) break;
+				frontier = nextFrontier;
 			}
 		}
 
