@@ -153,7 +153,7 @@ export const editorHandlers: Record<string, (params: Record<string, any>) => Pro
 
 		// Give the renderer a moment to finish redrawing after viewport change
 		if (mode !== 'current') {
-			await delay(200);
+			await delay(500);
 		}
 
 		const blob = await eda.dmt_EditorControl.getCurrentRenderedAreaImage();
