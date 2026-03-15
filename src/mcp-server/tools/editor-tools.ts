@@ -45,4 +45,46 @@ export function registerEditorTools(server: McpServer, bridge: WebSocketBridge):
 			return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 		},
 	);
+
+	server.tool(
+		'editor_capture_screenshot',
+		[
+			'Capture a screenshot of the current design view as a PNG image.',
+			'Modes:',
+			'  - "full": Zoom to fit all primitives, then capture (default)',
+			'  - "board": Zoom to PCB board outline, then capture (PCB only; falls back to full for schematics)',
+			'  - "region": Zoom to a specific coordinate region, then capture (requires left/right/top/bottom)',
+			'  - "components": Select specific primitives, zoom to fit them, capture, then restore previous selection',
+			'  - "current": Capture the current view as-is without changing zoom',
+			'Use "full" or "board" for an overview, "components" to focus on specific parts, "region" for exact coordinates.',
+		].join('\n'),
+		withInstanceParam({
+			mode: z.enum(['full', 'board', 'region', 'components', 'current']).default('full')
+				.describe('Screenshot framing mode'),
+			left: z.number().optional().describe('Left bound for region mode'),
+			right: z.number().optional().describe('Right bound for region mode'),
+			top: z.number().optional().describe('Top bound for region mode'),
+			bottom: z.number().optional().describe('Bottom bound for region mode'),
+			primitiveIds: z.array(z.string()).optional()
+				.describe('Primitive IDs to frame for components mode (from get_all_components, etc.)'),
+		}),
+		async ({ mode, left, right, top, bottom, primitiveIds, instance_id }) => {
+			const result = await bridge.send('editor.captureScreenshot', {
+				mode, left, right, top, bottom, primitiveIds, instance_id,
+			}) as { image: string; mimeType: string; size: number; viewport?: any };
+
+			const content: Array<{ type: 'image'; data: string; mimeType: string } | { type: 'text'; text: string }> = [
+				{ type: 'image' as const, data: result.image, mimeType: result.mimeType },
+			];
+
+			if (result.viewport) {
+				content.push({
+					type: 'text' as const,
+					text: `Viewport bounds: ${JSON.stringify(result.viewport)}`,
+				});
+			}
+
+			return { content };
+		},
+	);
 }

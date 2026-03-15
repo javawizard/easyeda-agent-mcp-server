@@ -16,6 +16,22 @@ function stripBloat(obj: any): any {
 	return obj;
 }
 
+async function blobToBase64(blob: Blob): Promise<string> {
+	return new Promise((resolve, reject) => {
+		const reader = new FileReader();
+		reader.onload = () => {
+			const dataUrl = reader.result as string;
+			resolve(dataUrl.split(',')[1] || '');
+		};
+		reader.onerror = () => reject(new Error('Failed to read image blob'));
+		reader.readAsDataURL(blob);
+	});
+}
+
+function delay(ms: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export const editorHandlers: Record<string, (params: Record<string, any>) => Promise<any>> = {
 	'editor.project.getStructure': async () => {
 		const [project, currentDoc] = await Promise.all([
@@ -91,5 +107,82 @@ export const editorHandlers: Record<string, (params: Record<string, any>) => Pro
 		}
 
 		return { tabs, splitScreenTree: tree };
+	},
+
+	'editor.captureScreenshot': async (params) => {
+		const mode: string = params.mode || 'full';
+
+		const doc = await eda.dmt_SelectControl.getCurrentDocumentInfo();
+		const docType = doc?.documentType; // 1=sch, 3=pcb
+
+		// Adjust viewport based on mode
+		let viewportInfo: any = undefined;
+		let savedSelection: string[] | undefined;
+
+		if (mode === 'full') {
+			viewportInfo = await eda.dmt_EditorControl.zoomToAllPrimitives();
+		} else if (mode === 'board' && docType === 3) {
+			await eda.dmt_EditorControl.zoomToBoardOutline();
+		} else if (mode === 'board' && docType !== 3) {
+			// Fall back to full for schematics
+			viewportInfo = await eda.dmt_EditorControl.zoomToAllPrimitives();
+		} else if (mode === 'region') {
+			const { left, right, top, bottom } = params;
+			if (left == null || right == null || top == null || bottom == null) {
+				throw new Error('Region mode requires left, right, top, bottom parameters');
+			}
+			await eda.dmt_EditorControl.zoomToRegion(left, right, top, bottom);
+		} else if (mode === 'components') {
+			const primitiveIds: string[] = params.primitiveIds;
+			if (!primitiveIds || primitiveIds.length === 0) {
+				throw new Error('Components mode requires a non-empty primitiveIds array');
+			}
+
+			// Save current selection
+			if (docType === 3) {
+				savedSelection = await eda.pcb_SelectControl.getAllSelectedPrimitives_PrimitiveId();
+				await eda.pcb_SelectControl.doSelectPrimitives(primitiveIds);
+			} else if (docType === 1) {
+				savedSelection = await eda.sch_SelectControl.getAllSelectedPrimitives_PrimitiveId();
+				await eda.sch_SelectControl.doSelectPrimitives(primitiveIds);
+			}
+
+			viewportInfo = await eda.dmt_EditorControl.zoomToSelectedPrimitives();
+		}
+		// mode === 'current' — no viewport change
+
+		// Give the renderer a moment to finish redrawing after viewport change
+		if (mode !== 'current') {
+			await delay(200);
+		}
+
+		const blob = await eda.dmt_EditorControl.getCurrentRenderedAreaImage();
+		if (!blob) {
+			throw new Error('Failed to capture screenshot — no image returned');
+		}
+
+		// Restore previous selection if we changed it
+		if (mode === 'components' && savedSelection !== undefined) {
+			if (docType === 3) {
+				await eda.pcb_SelectControl.clearSelected();
+				if (savedSelection.length > 0) {
+					await eda.pcb_SelectControl.doSelectPrimitives(savedSelection);
+				}
+			} else if (docType === 1) {
+				eda.sch_SelectControl.clearSelected();
+				if (savedSelection.length > 0) {
+					await eda.sch_SelectControl.doSelectPrimitives(savedSelection);
+				}
+			}
+		}
+
+		const base64 = await blobToBase64(blob);
+
+		return {
+			image: base64,
+			mimeType: 'image/png',
+			size: blob.size,
+			viewport: viewportInfo || undefined,
+		};
 	},
 };
