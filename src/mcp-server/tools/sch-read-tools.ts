@@ -165,7 +165,7 @@ Much smaller than sch_get_netlist — use this for connectivity questions.
 Returns nets (net → pin connections like "U3.2(GND)") and components (designator → part + pin assignments).
 Auto-generated net names (starting with $) are hidden from the nets section but still appear in component pin assignments.
 IMPORTANT: $-prefixed nets (like $R11_1, $U3_7) represent real electrical connections — they are unnamed nets where the designer didn't assign a net label. When investigating a component's full circuit context, you MUST look at $-prefixed nets in its pin assignments and trace them to see what else is connected. These often carry critical signals (reset lines, boot pins, enable pins) that would otherwise be invisible.
-Use the depth parameter (default 1) to automatically trace through $-prefixed nets and discover indirect connections. For example, depth=2 with designators=["U3"] finds U3's neighbors through unnamed nets — great for finding reset/boot/enable circuitry that connects indirectly.`,
+Use the depth parameter (default 2) to automatically trace through $-prefixed nets and discover indirect connections — so by default, you already see one hop through unnamed nets (pull-ups, series resistors, boot/reset circuitry). Pass depth=1 to see only direct connections, or 3–5 to chase longer chains. The response includes a note field reminding you of the depth used.`,
 		withDocumentParam({
 			designators: z
 				.array(z.string())
@@ -181,7 +181,7 @@ Use the depth parameter (default 1) to automatically trace through $-prefixed ne
 				.min(1)
 				.max(5)
 				.optional()
-				.describe('How many hops to trace through $-prefixed (unnamed) nets from the specified designators. depth=1 (default) shows only direct connections. depth=2 follows unnamed nets one hop out to find indirectly connected components (e.g. buttons, regulators connected through resistors). Only used with designators parameter.'),
+				.describe('How many hops to trace through $-prefixed (unnamed) nets from the specified designators. depth=1 shows only direct connections. depth=2 (default) follows unnamed nets one hop out — finds buttons/pull-ups/regulators connected through series resistors. Higher values chase longer chains. Only used with designators parameter.'),
 		}),
 		async (params) => {
 			const result = await bridge.send('sch.connectivity.get', params);

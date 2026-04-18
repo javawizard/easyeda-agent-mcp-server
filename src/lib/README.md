@@ -44,24 +44,31 @@ Three modules:
 
 ## Workflow
 
-The library is **not currently wired into MCP tools**. The intended workflow
-is to write throwaway `ts-node` scripts that use the library directly:
+The library pairs with the MCP server's file-based document tools to form
+a pull-edit-push loop:
 
 ```
-1. Use MCP tool `project_export_file` to save .epro to /tmp/something.epro
-2. Unzip it: `unzip /tmp/something.epro -d /tmp/project/`
-3. Write a TypeScript script that:
+1. MCP tool `project_export_file`       →  .epro ZIP of NDJSON on disk
+2. Unzip:  `unzip /tmp/something.epro -d /tmp/project/`
+3. ts-node script that:
      - calls loadSchematic('/tmp/project', schematicUuid)
      - creates a SchematicWriter
-     - calls high-level edit methods
-     - writes the result to /tmp/output.esch
-4. Use MCP tool `document_load_from_file` to push it back into EasyEDA
+     - calls high-level edit methods (addNetport, addSeriesResistor, …)
+     - writes writer.serialize() to /tmp/output.esch
+4. MCP tool `document_load_from_file`   →  pushes the edited source back
 ```
 
-Why throwaway scripts instead of MCP tools? Because we don't yet know what the
-right MCP tool API looks like. By writing scripts, we can iterate on the
-library API freely. Once patterns stabilize, the most useful operations can
-be wrapped as MCP tools.
+Every destructive upload is auto-backed up to a git repo (default
+`~/.easyeda-mcp-backup`, override via `EDA_BACKUP_DIR`); the response
+includes a backup SHA. Uploads default to `validate='strict'`, which runs
+the Zod schema on the new source and aborts on unknown or malformed lines.
+
+Why a separate editing library + throwaway scripts, rather than one MCP
+tool per edit operation? Bulk edits (hooking up a chip, stamping many
+netports) become hundreds of per-primitive round-trips via MCP, each
+~100ms. The library applies all edits locally in one pass and re-uploads
+once — orders of magnitude faster. The high-level edit API also stays
+easy to iterate on without rev'ing the MCP tool surface.
 
 ## Complete Example
 

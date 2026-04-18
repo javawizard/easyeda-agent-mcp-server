@@ -26,7 +26,7 @@ export const schDocumentHandlers: Record<string, (params: Record<string, any>) =
 	},
 
 	'sch.connectivity.get': async (params) => {
-		const depth: number = (params.depth as number) || 1;
+		const depth: number = (params.depth as number) || 2;
 		let designatorFilter: Set<string> | undefined = params.designators
 			? new Set(params.designators as string[])
 			: undefined;
@@ -183,6 +183,9 @@ export const schDocumentHandlers: Record<string, (params: Record<string, any>) =
 			filteredNets = relevantNets;
 		}
 
-		return { nets: filteredNets, components: componentsView };
+		const note = designatorFilter
+			? `depth=${depth} used. $-prefixed nets were traced ${depth - 1} hop(s) from the requested designators. To reach further (e.g. through a chain of series resistors), pass a higher depth (max 5).`
+			: `depth=${depth} applies only when designators are specified; ignored for whole-schematic queries.`;
+		return { note, nets: filteredNets, components: componentsView };
 	},
 };
