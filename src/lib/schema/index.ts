@@ -14,8 +14,12 @@ export * from './line-attr';
 export * from './line-wire';
 export * from './line-pin';
 export * from './line-fontstyle';
+export * from './line-graphics';
 export * from './esch';
 export * from './esym';
+export * from './epcb';
+export * from './eins';
+export * from './line-pcb';
 export {
 	computeFingerprint,
 	logDiscovery,

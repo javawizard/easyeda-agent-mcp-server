@@ -12,7 +12,7 @@
 import { appendFile, mkdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { homedir } from 'node:os';
-import type { UnknownLineInfo } from './types';
+import type { SchemaDocType, UnknownLineInfo } from './types';
 
 const DEFAULT_DISCOVERY_LOG = join(homedir(), '.easyeda-schema-discovery.jsonl');
 
@@ -32,7 +32,7 @@ export function computeFingerprint(
 }
 
 export interface DiscoveryContext {
-	docType: 'esch' | 'esym';
+	docType: SchemaDocType;
 	projectUuid?: string;
 	documentUuid?: string;
 }

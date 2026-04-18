@@ -6,6 +6,7 @@ import { withInstanceParam, withDocumentParam } from './query-params';
 import {
 	parseEschSource,
 	parseEsymSource,
+	parseEpcbSource,
 	logDiscovery,
 	type ValidationReport,
 } from '../../lib/schema';
@@ -17,6 +18,7 @@ import {
  *   26 = panel (.epan)
  */
 const SCHEMATIC_DOC_TYPE = 1;
+const PCB_DOC_TYPE = 3;
 
 /**
  * Validate a schematic source string with the .esch schema. Unknowns are
@@ -53,6 +55,21 @@ export async function validateSymbolSource(
 	return report;
 }
 
+export async function validatePcbSource(
+	source: string,
+	context: { projectUuid?: string; documentUuid?: string },
+): Promise<ValidationReport> {
+	const { report } = parseEpcbSource(source);
+	if (report.samples.unknownTags.length > 0) {
+		try {
+			await logDiscovery(report.samples.unknownTags, { docType: 'epcb', ...context });
+		} catch (err) {
+			console.error('[schema] discovery log write failed:', err);
+		}
+	}
+	return report;
+}
+
 export interface DocumentContext {
 	projectUuid?: string;
 	projectName?: string;
@@ -75,8 +92,8 @@ export function skippedReport(reason: string, docType: 'esch' | 'esym' | 'other'
 }
 
 /**
- * Run validation for a document of the given type. Non-schematic types return
- * a skipped report. Schematic types parse via the .esch schema.
+ * Run validation for a document of the given type. Schematic and PCB documents
+ * parse against their respective schemas; other types return a skipped report.
  */
 export async function validateByDocType(
 	source: string,
@@ -86,6 +103,9 @@ export async function validateByDocType(
 	if (docType === SCHEMATIC_DOC_TYPE) {
 		return validateSchematicSource(source, context);
 	}
+	if (docType === PCB_DOC_TYPE) {
+		return validatePcbSource(source, context);
+	}
 	return skippedReport(`no schema for documentType=${docType ?? 'unknown'}`);
 }
 
@@ -94,9 +114,10 @@ export function registerSchemaTools(server: McpServer, bridge: WebSocketBridge):
 		'document_validate',
 		`Validate a document's source against the Zod-backed EasyEDA schema.
 Runs on the currently active document by default, or on a local file if filePath is provided.
-Only schematic documents (.esch, documentType=1) are validated today — other types return a
-"skipped" report with a reason. Unknown tags (shapes the schema doesn't cover yet) are
-appended to the discovery log at ~/.easyeda-schema-discovery.jsonl (override via EDA_DISCOVERY_LOG).
+Schematic (.esch, documentType=1) and PCB (.epcb, documentType=3) documents are validated;
+other types return a "skipped" report with a reason. Unknown tags (shapes the schema
+doesn't cover yet) are appended to the discovery log at ~/.easyeda-schema-discovery.jsonl
+(override via EDA_DISCOVERY_LOG).
 
 Returns a JSON-serializable report: { docType, lineCount, knownCount, unknownTagCount,
 invalidCount, samples: { unknownTags, invalid } }. Known issues are samples of known
@@ -132,4 +153,4 @@ in the schema vocabulary.`,
 	);
 }
 
-export { SCHEMATIC_DOC_TYPE };
+export { SCHEMATIC_DOC_TYPE, PCB_DOC_TYPE };

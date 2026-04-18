@@ -5,15 +5,19 @@ import { join } from 'node:path';
 import {
 	parseEschSource,
 	parseEsymSource,
+	parseEpcbSource,
+	parseEinsSource,
 	serializeEschLines,
-	type ParsedLine,
-	type EschLine,
+	serializeEpcbLines,
+	serializeEinsLines,
 } from '../src/lib/schema';
 import { parseSchematic } from '../src/lib/schematic-reader';
 import { SchematicWriter } from '../src/lib/schematic-writer';
 
 const ESCH_FIXTURE = readFileSync(join(__dirname, 'fixtures/sample.esch'), 'utf8');
 const ESYM_FIXTURE = readFileSync(join(__dirname, 'fixtures/sample.esym'), 'utf8');
+const EPCB_FIXTURE = readFileSync(join(__dirname, 'fixtures/sample.epcb'), 'utf8');
+const EINS_FIXTURE = readFileSync(join(__dirname, 'fixtures/sample.eins'), 'utf8');
 
 test('.esch parses with zero unknowns and zero invalids', () => {
 	const { lines, report } = parseEschSource(ESCH_FIXTURE);
@@ -95,4 +99,59 @@ test('fingerprints deduplicate: many identical unknowns produce one sample', () 
 	const { report } = parseEschSource(many);
 	assert.equal(report.unknownTagCount, 5, 'all 5 occurrences counted');
 	assert.equal(report.samples.unknownTags.length, 1, 'but only 1 sample kept (deduped)');
+});
+
+// ---------------------------------------------------------------------------
+// .epcb (PCB) schema
+// ---------------------------------------------------------------------------
+
+test('.epcb parses with zero unknowns and zero invalids', () => {
+	const { lines, report } = parseEpcbSource(EPCB_FIXTURE);
+	assert.equal(report.docType, 'epcb');
+	assert.equal(report.unknownTagCount, 0, `unknowns: ${JSON.stringify(report.samples.unknownTags)}`);
+	assert.equal(report.invalidCount, 0, `invalids: ${JSON.stringify(report.samples.invalid)}`);
+	assert.ok(report.knownCount > 0);
+	assert.ok(lines.every((l) => l.kind === 'known' || l.kind === 'blank'));
+});
+
+test('.epcb round-trips byte-identically when no mutations are made', () => {
+	const { lines } = parseEpcbSource(EPCB_FIXTURE);
+	const out = serializeEpcbLines(lines);
+	assert.equal(out, EPCB_FIXTURE);
+});
+
+test('.epcb injected unknown tag is reported and survives round-trip', () => {
+	const injected = EPCB_FIXTURE + '\n["FOOBAR_PCB","e9999"]';
+	const { lines, report } = parseEpcbSource(injected);
+	assert.equal(report.unknownTagCount, 1);
+	assert.equal(report.samples.unknownTags[0].tag, 'FOOBAR_PCB');
+	assert.equal(serializeEpcbLines(lines), injected);
+});
+
+test('.epcb LINE with non-numeric x1 is reported as invalid', () => {
+	const corrupted = EPCB_FIXTURE.replace(
+		/\["LINE","e\d+",[^,]+,"[^"]*",\d+,([0-9.\-]+),/,
+		(match, _x1) => match.replace(/,([0-9.\-]+),$/, ',"not-a-number",'),
+	);
+	if (corrupted === EPCB_FIXTURE) return; // no LINE in this fixture; skip
+	const { report } = parseEpcbSource(corrupted);
+	assert.ok(report.invalidCount >= 1, 'invalid LINE should be detected');
+	assert.ok(report.samples.invalid.some((i) => i.tag === 'LINE'));
+});
+
+// ---------------------------------------------------------------------------
+// .eins (instance overrides) schema
+// ---------------------------------------------------------------------------
+
+test('.eins parses with zero unknowns and zero invalids', () => {
+	const { report } = parseEinsSource(EINS_FIXTURE);
+	assert.equal(report.docType, 'eins');
+	assert.equal(report.unknownTagCount, 0);
+	assert.equal(report.invalidCount, 0);
+	assert.ok(report.knownCount > 0);
+});
+
+test('.eins round-trips byte-identically when no mutations are made', () => {
+	const { lines } = parseEinsSource(EINS_FIXTURE);
+	assert.equal(serializeEinsLines(lines), EINS_FIXTURE);
 });

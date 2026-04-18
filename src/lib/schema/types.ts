@@ -32,8 +32,10 @@ export type ParsedLine<L> =
 	| { kind: 'invalid'; tag: string | null; raw: string; lineIndex: number; reason: string }
 	| { kind: 'blank'; raw: string; lineIndex: number };
 
+export type SchemaDocType = 'esch' | 'esym' | 'epcb' | 'eins';
+
 export interface ValidationReport {
-	docType: 'esch' | 'esym' | 'other';
+	docType: SchemaDocType | 'other';
 	skipped?: { reason: string };
 	lineCount: number;
 	knownCount: number;

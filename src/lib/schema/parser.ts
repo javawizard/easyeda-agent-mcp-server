@@ -6,6 +6,7 @@
 import type { z, ZodError } from 'zod';
 import type {
 	ParsedLine,
+	SchemaDocType,
 	UnknownLineInfo,
 	ValidationIssue,
 	ValidationReport,
@@ -38,7 +39,7 @@ function formatZodError(err: ZodError): string {
 
 export interface ParseOptions<L> {
 	schemaMap: Record<string, AnyTupleSchema>;
-	docType: 'esch' | 'esym';
+	docType: SchemaDocType;
 }
 
 export function parseNdjsonSource<L>(
