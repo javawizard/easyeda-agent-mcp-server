@@ -34,15 +34,21 @@ export const PcbCanvasLine = z.tuple([
 export type PcbCanvasLine = z.infer<typeof PcbCanvasLine>;
 
 /**
- * LAYER — board layer definition.
+ * LAYER — board layer definition. All surveyed files emit exactly 9 slots.
  *   ["LAYER",1,"TOP","Top Layer",3,"#ff0000",1,"#7f0000",0.7]
- *   tag, layerId, kind, displayName, enabled, color, ?, color2, opacity
+ *   tag, layerId, kind, displayName, type, color, visible, color2, opacity
+ * `type` observed as 0|1|3|7; `visible` observed as 0|1|0.7; `opacity` always 0.7.
  */
 export const PcbLayerLine = z.tuple([
 	z.literal('LAYER'),
-	z.number(),                  // layerId
-	z.string(),                  // kind (TOP/BOTTOM/SIGNAL/SILK/etc.)
-	z.string(),                  // displayName
+	z.number(),  // layerId
+	z.string(),  // kind (TOP/BOTTOM/SIGNAL/SILK/etc.)
+	z.string(),  // displayName
+	z.number(),  // type (enum of small ints)
+	z.string(),  // primary color (#rrggbb)
+	z.number(),  // visible (0|1|0.7 observed)
+	z.string(),  // secondary color (#rrggbb)
+	z.number(),  // opacity
 ]).rest(z.unknown());
 export type PcbLayerLine = z.infer<typeof PcbLayerLine>;
 
@@ -109,14 +115,21 @@ export type PcbPreferenceLine = z.infer<typeof PcbPreferenceLine>;
 // ---- Connectivity / nets ---------------------------------------------------
 
 /**
- * NET — declared net.
- *   ["NET","",null,null,1,null,0,null]   (the unnamed "no-net" entry)
+ * NET — declared net. Always 8 slots across surveyed files.
+ *   ["NET","",null,null,1,null,0,null]   (unconnected pseudo-net)
  *   ["NET","GND",null,null,1,null,0,null]
- *   tag, netName, then various flags / class refs (loose for now)
+ *   ["NET","USB_DP",null,null,1,"DP1",0,null]  (slot 5 carries diff-pair tag)
+ *   tag, netName, ?, ?, kind, diffPairTag, flag, ?
  */
 export const PcbNetLine = z.tuple([
 	z.literal('NET'),
-	z.string(),  // net name ("" for the unconnected pseudo-net)
+	z.string(),                              // net name ("" = unconnected pseudo-net)
+	z.null(),                                // ?
+	z.null(),                                // ?
+	z.number(),                              // kind (always 1 in survey)
+	z.union([z.string(), z.null()]),         // diffPairTag ("DP1"/"DP2") or null
+	z.number(),                              // flag (0|1 observed)
+	z.null(),                                // ?
 ]).rest(z.unknown());
 export type PcbNetLine = z.infer<typeof PcbNetLine>;
 
@@ -158,34 +171,67 @@ export const PcbComponentLine = z.tuple([
 export type PcbComponentLine = z.infer<typeof PcbComponentLine>;
 
 /**
- * ATTR — PCB attribute. 22 positional fields — completely different from the
- * .esch ATTR (12 fields). Keep loose for now and tighten later when we have
- * a concrete PCB-side attribute editing workflow.
+ * ATTR — PCB attribute. 22 positional fields across 1,191 surveyed lines.
  *   ["ATTR","e0e17",0,"e0",3,null,null,"Footprint","bfcb...",0,0,"default",45,6,0,0,3,0,0,0,0,0]
- *   tag, elementId, ?, parentId, layer, ?, ?, attrName, value, ...trailing positional
+ *
+ * Slot semantics (positions tightly bound by survey):
+ *   [1]  elementId (string)
+ *   [2]  always 0 (number)
+ *   [3]  parentId (string — component element id)
+ *   [4]  layer (number; mostly 3, rarely 13)
+ *   [5]  x override (number | null)
+ *   [6]  y override (number | null)
+ *   [7]  attrName (string; "Designator" | "Device" | "Footprint" | "LABEL" | "")
+ *   [8]  value (string; one survey row had number — accept both)
+ *   [9]  always 0 (visible?)
+ *   [10] 0|1 (flip?)
+ *   [11] always "default" (fontName)
+ *   [12] size (number; 45 or 100)
+ *   [13] always 6
+ *   [14] always 0
+ *   [15] always 0
+ *   [16] 3|2 (text alignment-ish)
+ *   [17] rotation-like (number; varies)
+ *   [18-21] all 0
+ *
+ * This is structurally distinct from the .esch ATTR (12 fields) — kept as
+ * PcbAttrLine rather than reusing line-attr.ts.
  */
 export const PcbAttrLine = z.tuple([
 	z.literal('ATTR'),
-	z.string(),  // elementId
-	z.unknown(), // ?
-	z.string(),  // parentId
-	z.number(),  // layer
-	z.unknown(), // ?
-	z.unknown(), // ?
-	z.string(),  // attrName
-	z.unknown(), // value (string | number | null | other)
+	z.string(),                              // [1] elementId
+	z.number(),                              // [2] always 0
+	z.string(),                              // [3] parentId
+	z.number(),                              // [4] layer
+	z.union([z.number(), z.null()]),         // [5] x override
+	z.union([z.number(), z.null()]),         // [6] y override
+	z.string(),                              // [7] attrName
+	z.union([z.string(), z.number()]),       // [8] value
+	z.number(),                              // [9] ?
+	z.number(),                              // [10] ?
+	z.string(),                              // [11] fontName
+	z.number(),                              // [12] size
+	z.number(),                              // [13] ?
+	z.number(),                              // [14] ?
+	z.number(),                              // [15] ?
+	z.number(),                              // [16] alignment-ish
+	z.number(),                              // [17] rotation-like
+	z.number(),                              // [18] ?
+	z.number(),                              // [19] ?
+	z.number(),                              // [20] ?
+	z.number(),                              // [21] ?
 ]).rest(z.unknown());
 export type PcbAttrLine = z.infer<typeof PcbAttrLine>;
 
 /**
- * LINE — copper track segment (and silk/document-layer line).
+ * LINE — copper track segment (and silk/document-layer line). 11 slots.
  *   ["LINE","e238",0,"+1V2_FPGA",1,1331.175,-1183.815,1356.775,-1183.815,10,0]
  *   tag, elementId, ?, netName, layer, x1, y1, x2, y2, width, ?
  */
 export const PcbLineLine = z.tuple([
 	z.literal('LINE'),
 	z.string(),  // elementId
-	z.unknown(), // ?
+	z.number(),  // ? (always 0 in survey)
 	z.string(),  // netName ("" for non-net lines like silk)
 	z.number(),  // layer
 	z.number(),  // x1
@@ -193,55 +239,68 @@ export const PcbLineLine = z.tuple([
 	z.number(),  // x2
 	z.number(),  // y2
 	z.number(),  // width
+	z.number(),  // ? (always 0 in survey)
 ]).rest(z.unknown());
 export type PcbLineLine = z.infer<typeof PcbLineLine>;
 
 /**
- * VIA.
+ * VIA. 14 slots.
  *   ["VIA","e383",0,"GND","",996.7958,-1240.1955,12.0078,16,0,null,null,0,[]]
- *   tag, elementId, ?, netName, ?, x, y, drillDiam, padDiam, ...trailing
+ *   tag, elementId, ?, netName, ?, x, y, drillDiam, padDiam, ?, ?, ?, ?, extras
  */
 export const PcbViaLine = z.tuple([
 	z.literal('VIA'),
-	z.string(),  // elementId
-	z.unknown(), // ?
-	z.string(),  // netName
-	z.unknown(), // ?
-	z.number(),  // x
-	z.number(),  // y
-	z.number(),  // drill diameter
-	z.number(),  // pad diameter
+	z.string(),                   // elementId
+	z.number(),                   // ? (always 0)
+	z.string(),                   // netName
+	z.string(),                   // ? (always "")
+	z.number(),                   // x
+	z.number(),                   // y
+	z.number(),                   // drill diameter
+	z.number(),                   // pad diameter
+	z.number(),                   // ? (always 0)
+	z.null(),                     // ?
+	z.null(),                     // ?
+	z.number(),                   // ? (always 0)
+	z.array(z.unknown()),         // extras (empty array in all surveyed)
 ]).rest(z.unknown());
 export type PcbViaLine = z.infer<typeof PcbViaLine>;
 
 /**
- * POUR — copper pour declaration.
+ * POUR — copper pour declaration. 12 slots.
  *   ["POUR","e79",0,"GND",15,0.2,"POUR1",0,[["R",-80,65,2170,2145,0,0]],["SOLID",8],0,1]
- *   tag, elementId, ?, netName, layer, gap, pourName, ?, shape, fillStyle, ...
+ *   tag, elementId, ?, netName, layer, gap, pourName, ?, shape, fillStyle, ?, ?
  */
 export const PcbPourLine = z.tuple([
 	z.literal('POUR'),
-	z.string(),  // elementId
-	z.unknown(), // ?
-	z.string(),  // netName
-	z.number(),  // layer
-	z.number(),  // gap (clearance)
-	z.string(),  // pourName
+	z.string(),                   // elementId
+	z.number(),                   // ? (always 0)
+	z.string(),                   // netName
+	z.number(),                   // layer
+	z.number(),                   // gap (clearance)
+	z.string(),                   // pourName
+	z.number(),                   // ? (small-enum)
+	z.array(z.unknown()),         // shape (e.g. [["R",x,y,w,h,rx,ry]])
+	z.array(z.unknown()),         // fillStyle (e.g. ["SOLID",8])
+	z.number(),                   // ? (always 0)
+	z.number(),                   // ? (0|1)
 ]).rest(z.unknown());
 export type PcbPourLine = z.infer<typeof PcbPourLine>;
 
 /**
  * POURED — pre-rendered pour copper geometry, attached to a parent POUR.
+ * 6 slots. Observed `isUpToDate` as strictly boolean in 676 samples; kept
+ * the number fallback for forward-compat only.
  *   ["POURED","e116","e79",0,true,[[...polyline data...]]]
- *   tag, elementId, parentPourId, ?, isUpToDate, polylineGroups
- *   `isUpToDate` observed as bool; could be number — accept either.
+ *   tag, elementId, parentPourId, kind, isUpToDate, polylineGroups
  */
 export const PcbPouredLine = z.tuple([
 	z.literal('POURED'),
 	z.string(),                          // elementId
 	z.string(),                          // parentPourId
-	z.unknown(),                         // ?
-	z.union([z.boolean(), z.number()]),  // isUpToDate (truthy)
+	z.number(),                          // kind (0|1|2 observed)
+	z.union([z.boolean(), z.number()]),  // isUpToDate
+	z.array(z.unknown()),                // polyline groups
 ]).rest(z.unknown());
 export type PcbPouredLine = z.infer<typeof PcbPouredLine>;
 
@@ -274,19 +333,30 @@ export type PcbRegionLine = z.infer<typeof PcbRegionLine>;
 // ---- Text / annotations ----------------------------------------------------
 
 /**
- * STRING — free text on the PCB.
+ * STRING — free text on the PCB. 18 slots, all typed from survey.
  *   ["STRING","e4606",0,4,720,-1560,"BLUETOOTH TRACKER\nPROTOTYPE 1","default",80,8,0,0,3,180,0,0,0,0]
- *   tag, elementId, ?, layer, x, y, content, fontName, height, ...trailing
+ *   tag, elementId, ?, layer, x, y, content, fontName, height, lineHeight,
+ *   ?, ?, alignment, rotation, mirror, ?, ?, ?
  */
 export const PcbStringLine = z.tuple([
 	z.literal('STRING'),
-	z.string(),  // elementId
-	z.unknown(), // ?
-	z.number(),  // layer
-	z.number(),  // x
-	z.number(),  // y
-	z.string(),  // content
-	z.string(),  // fontName
+	z.string(),  // [1] elementId
+	z.number(),  // [2] ? (always 0)
+	z.number(),  // [3] layer
+	z.number(),  // [4] x
+	z.number(),  // [5] y
+	z.string(),  // [6] content
+	z.string(),  // [7] fontName (always "default")
+	z.number(),  // [8] height
+	z.number(),  // [9] lineHeight
+	z.number(),  // [10] ? (always 0)
+	z.number(),  // [11] ? (always 0)
+	z.number(),  // [12] alignment-ish (always 3)
+	z.number(),  // [13] rotation
+	z.number(),  // [14] mirror (0|1)
+	z.number(),  // [15] ? (always 0)
+	z.number(),  // [16] ? (always 0)
+	z.number(),  // [17] ? (always 0)
 ]).rest(z.unknown());
 export type PcbStringLine = z.infer<typeof PcbStringLine>;
 
