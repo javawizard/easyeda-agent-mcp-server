@@ -114,6 +114,32 @@ export const manufactureHandlers: Record<string, (params: Record<string, any>) =
 		return exportFile(file);
 	},
 
+	'pcb.manufacture.getOpenDatabaseDoublePlusFile': async (params) => {
+		const file = await eda.pcb_ManufactureData.getOpenDatabaseDoublePlusFile(
+			params.fileName,
+			params.unit,
+			params.otherData,
+			params.layers,
+			params.objects,
+		);
+		return exportFile(file);
+	},
+
+	'pcb.manufacture.getIpcD356AFile': async (params) => {
+		const file = await eda.pcb_ManufactureData.getIpcD356AFile(params.fileName);
+		return exportFile(file);
+	},
+
+	'pcb.manufacture.getFlyingProbeTestFile': async (params) => {
+		const file = await eda.pcb_ManufactureData.getFlyingProbeTestFile(params.fileName);
+		return exportFile(file);
+	},
+
+	'pcb.manufacture.getTestPointFile': async (params) => {
+		const file = await eda.pcb_ManufactureData.getTestPointFile(params.fileName, params.fileType);
+		return exportFile(file);
+	},
+
 	// === Import ===
 
 	'pcb.manufacture.importAutoRouteJson': async (params) => {
