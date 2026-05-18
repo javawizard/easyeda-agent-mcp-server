@@ -1,36 +1,21 @@
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { z } from 'zod';
-import { resolve as resolvePath } from 'node:path';
-import { WebSocketBridge } from './bridge';
-import { registerReadTools } from './tools/read-tools';
-import { registerWriteTools } from './tools/write-tools';
-import { registerAnalysisTools } from './tools/analysis-tools';
-import { registerSchReadTools } from './tools/sch-read-tools';
-import { registerSchWriteTools } from './tools/sch-write-tools';
-import { registerLibTools } from './tools/lib-tools';
-import { registerManufactureTools } from './tools/manufacture-tools';
-import { registerPcbDrcTools } from './tools/pcb-drc-tools';
-import { registerPcbLayerTools } from './tools/pcb-layer-tools';
-import { registerEditorTools } from './tools/editor-tools';
-import { registerFileManagerTools } from './tools/file-manager-tools';
-import { registerSchemaTools } from './tools/schema-tools';
-
-const PORT_RANGE_START = Number(process.env.EDA_WS_PORT) || 15168;
-const PORT_RANGE_SIZE = Number(process.env.EDA_WS_PORT_RANGE) || 40;
-
 /**
- * Build the MCP server's `instructions` field — the block of context every
- * client loads up front. This is the only documentation that reaches agents
- * in unrelated repos, so it has to cover:
- *   1. What the server is for and how to discover designs
- *   2. The download → edit → upload workflow for non-trivial edits
- *   3. Where the editing library + schema live (with absolute paths so agents
- *      in a foreign cwd can still find them)
- *   4. What to do when validation surfaces unknown tags (extend the schema)
- * Tight is better than comprehensive — agents can read the tool descriptions
- * and the repo's own docs for detail.
+ * MCP server: thin proxy in front of the bridge daemon.
+ *
+ * On startup, connects to the daemon, asks for its tool list, and registers
+ * each tool with the MCP SDK. Tool calls from the agent are forwarded to the
+ * daemon over UDS. If the daemon dies and respawns (e.g., upgraded), the
+ * proxy reconnects, re-fetches the tool list, diffs against what's currently
+ * registered, and adds/removes tools — the SDK auto-emits
+ * notifications/tools/list_changed for each registration change so the agent
+ * picks up new tools without a manual /mcp reconnect.
  */
+import { McpServer, type RegisteredTool } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { fromJSONSchema } from 'zod';
+import { resolve as resolvePath } from 'node:path';
+import { ProxyClient } from './proxy-client';
+import type { ToolDescriptor } from '../bridge-daemon/protocol';
+
 function buildInstructions(repoRoot: string): string {
 	return [
 		'This server provides direct access to schematic and PCB designs in EasyEDA Pro.',
@@ -49,122 +34,103 @@ function buildInstructions(repoRoot: string): string {
 	].join('\n');
 }
 
-async function main() {
-	const bridge = await WebSocketBridge.startOnAvailablePort(PORT_RANGE_START, PORT_RANGE_SIZE);
+/**
+ * Convert a daemon-supplied tool descriptor into MCP SDK registration args.
+ * The input schema travels as JSON Schema; the SDK requires zod, so we
+ * rehydrate via fromJSONSchema.
+ */
+function hydrateInputSchema(descriptor: ToolDescriptor): any {
+	// Daemon-side schemas are always built from z.object(shape), so they're
+	// JSON Schema "object" types. fromJSONSchema returns a zod schema that
+	// the SDK accepts directly via its AnySchema overload.
+	return fromJSONSchema(descriptor.inputSchema as any);
+}
 
-	// Self-locate the repo root so the instructions can tell agents exactly
-	// where the editing library, schema, and examples live — regardless of
-	// which directory the user's conversation is in. Works for both dev
-	// (`ts-node src/mcp-server/index.ts`) and prod (`node dist/mcp-server/index.js`):
-	// from either, walking two levels up lands at the repo root.
+async function main() {
+	const proxy = new ProxyClient();
+	await proxy.connect();
+
 	const REPO_ROOT = resolvePath(__dirname, '..', '..');
 
+	// listChanged must be declared up-front (Server.registerCapabilities throws
+	// after connect()). The SDK then auto-fires notifications/tools/list_changed
+	// on every registerTool / .remove() call after connect.
 	const server = new McpServer(
 		{
 			name: 'easyeda-agent-mcp-server',
 			version: '1.0.0',
 		},
 		{
+			capabilities: { tools: { listChanged: true } },
 			instructions: buildInstructions(REPO_ROOT),
 		},
 	);
 
-	server.tool(
-		'server_info',
-		'Get MCP server status: WebSocket port, connection state, connected instances, and allowed origins',
-		{},
-		async () => {
-			const instances = bridge.getConnectedInstances();
-			return {
-				content: [{
-					type: 'text' as const,
-					text: JSON.stringify({
-						wsPort: bridge.getPort(),
-						extensionConnected: bridge.isConnected(),
-						connectedInstanceCount: instances.length,
-						instances: instances.map((info) => ({
-							instanceId: info.instanceId,
-							projectName: info.projectName,
-							currentDocument: info.currentDocument,
-							documentType: info.documentType,
-						})),
-						allowAllOrigins: process.env.EDA_WS_ALLOW_ALL_ORIGINS === '1',
-					}, null, 2),
-				}],
-			};
-		},
-	);
+	const registeredTools = new Map<string, RegisteredTool>();
 
-	server.tool(
-		'list_instances',
-		'List all connected EasyEDA Pro instances with their current state (project, active document, open tabs). Use this to find the instance_id you need for other tools when multiple instances are connected.',
-		{},
-		async () => {
-			await bridge.refreshAllInstanceInfo();
-			const instances = bridge.getConnectedInstances();
+	function registerDescriptor(d: ToolDescriptor): void {
+		const inputSchema = hydrateInputSchema(d);
+		// Cast to any: the SDK's CallToolResult type is much more precise than
+		// what we want to ship across the NDJSON wire (e.g. it has typed
+		// resource-link variants we don't model). The daemon validates its own
+		// tool handler return shapes.
+		const handle = server.registerTool(
+			d.name,
+			{
+				description: d.description,
+				inputSchema,
+			},
+			(async (args: Record<string, unknown>) => proxy.callTool(d.name, args)) as any,
+		);
+		registeredTools.set(d.name, handle);
+	}
 
-			if (instances.length === 0) {
-				return {
-					content: [{
-						type: 'text' as const,
-						text: 'No EasyEDA Pro instances are connected. Please open EasyEDA Pro and click "Connect Claude" in the Claude menu.',
-					}],
-				};
+	function syncToolList(latest: ToolDescriptor[]): void {
+		const seen = new Set<string>();
+		for (const d of latest) {
+			seen.add(d.name);
+			if (registeredTools.has(d.name)) {
+				// Already registered. We could detect schema/description changes and
+				// re-register, but for now treat name as the identity — same name
+				// means same tool. Daemon respawn with a new schema for an existing
+				// tool will keep the old registration (rare; cheap to add later).
+				continue;
 			}
+			registerDescriptor(d);
+		}
+		for (const [name, handle] of registeredTools) {
+			if (!seen.has(name)) {
+				handle.remove();
+				registeredTools.delete(name);
+			}
+		}
+	}
 
-			return {
-				content: [{
-					type: 'text' as const,
-					text: JSON.stringify({
-						connectedInstanceCount: instances.length,
-						instances: instances.map((info) => ({
-							instanceId: info.instanceId,
-							projectName: info.projectName,
-							currentDocument: info.currentDocument,
-							documentType: info.documentType,
-							documents: info.documents,
-							connectedAt: new Date(info.connectedAt).toISOString(),
-						})),
-						note: instances.length === 1
-							? 'Only one instance connected — instance_id can be omitted from tool calls (auto-selected).'
-							: 'Multiple instances connected — pass instance_id to tool calls to target a specific instance.',
-					}, null, 2),
-				}],
-			};
-		},
-	);
-
-	registerReadTools(server, bridge);
-	registerWriteTools(server, bridge);
-	registerAnalysisTools(server, bridge);
-	registerSchReadTools(server, bridge);
-	registerSchWriteTools(server, bridge);
-	registerLibTools(server, bridge);
-	registerManufactureTools(server, bridge);
-	registerPcbDrcTools(server, bridge);
-	registerPcbLayerTools(server, bridge);
-	registerEditorTools(server, bridge);
-	registerFileManagerTools(server, bridge);
-	registerSchemaTools(server, bridge);
+	// Initial registration before connecting transport (so the capability
+	// declaration in the constructor is honored).
+	const initialTools = await proxy.listTools();
+	for (const d of initialTools) registerDescriptor(d);
 
 	const transport = new StdioServerTransport();
 	await server.connect(transport);
 
 	console.error('[MCP] EasyEDA Agent MCP Server started');
-	console.error(`[MCP] WebSocket Server on port ${bridge.getPort()}, waiting for EDA Pro Extension...`);
+	console.error(`[MCP] Registered ${initialTools.length} tools from bridge daemon`);
 
-	// Notify any peer MCP servers so their connected extensions discover us immediately
-	bridge.notifyPeers(PORT_RANGE_START, PORT_RANGE_SIZE);
-
-	process.on('SIGINT', async () => {
-		await bridge.stop();
-		process.exit(0);
+	// On daemon reconnect (after a crash or upgrade), re-list and diff. SDK
+	// auto-fires notifications/tools/list_changed for each register/remove.
+	proxy.onReconnected(() => {
+		proxy.listTools().then(
+			(tools) => {
+				syncToolList(tools);
+				console.error(`[MCP] Re-synced tools after daemon reconnect — ${tools.length} now registered`);
+			},
+			(err) => console.error('[MCP] Failed to re-list tools after reconnect:', err),
+		);
 	});
 
-	process.on('SIGTERM', async () => {
-		await bridge.stop();
-		process.exit(0);
-	});
+	process.on('SIGINT', async () => { await proxy.stop(); process.exit(0); });
+	process.on('SIGTERM', async () => { await proxy.stop(); process.exit(0); });
 }
 
 main().catch((err) => {

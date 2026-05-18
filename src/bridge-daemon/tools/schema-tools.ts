@@ -1,8 +1,7 @@
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { readFile } from 'node:fs/promises';
-import type { WebSocketBridge } from '../bridge';
-import { withInstanceParam, withDocumentParam } from './query-params';
+import type { ToolDef, ToolContext } from '../types';
+import { withDocumentParam } from './query-params';
 import {
 	parseEschSource,
 	parseEsymSource,
@@ -109,10 +108,11 @@ export async function validateByDocType(
 	return skippedReport(`no schema for documentType=${docType ?? 'unknown'}`);
 }
 
-export function registerSchemaTools(server: McpServer, bridge: WebSocketBridge): void {
-	server.tool(
-		'document_validate',
-		`Validate a document's source against the Zod-backed EasyEDA schema.
+export function schemaTools(ctx: ToolContext): ToolDef[] {
+	return [
+		{
+			name: 'document_validate',
+			description: `Validate a document's source against the Zod-backed EasyEDA schema.
 Runs on the currently active document by default, or on a local file if filePath is provided.
 Schematic (.esch, documentType=1) and PCB (.epcb, documentType=3) documents are validated;
 other types return a "skipped" report with a reason. Unknown tags (shapes the schema
@@ -123,34 +123,35 @@ Returns a JSON-serializable report: { docType, lineCount, knownCount, unknownTag
 invalidCount, samples: { unknownTags, invalid } }. Known issues are samples of known
 tags whose shape failed validation (typically writer bugs); unknowns are tags not yet
 in the schema vocabulary.`,
-		withDocumentParam({
-			filePath: z.string().optional().describe(
-				'Absolute path to a local file to validate. If omitted, validates the currently active document.',
-			),
-		}),
-		async ({ filePath, instance_id, document }) => {
-			let source: string;
-			let context: DocumentContext = {};
+			inputShape: withDocumentParam({
+				filePath: z.string().optional().describe(
+					'Absolute path to a local file to validate. If omitted, validates the currently active document.',
+				),
+			}),
+			handler: async ({ filePath, instance_id, document }) => {
+				let source: string;
+				let context: DocumentContext = {};
 
-			if (filePath) {
-				source = await readFile(filePath, 'utf8');
-				// No live-doc context when validating a file.
-			} else {
-				const result = await bridge.send('fileManager.getDocumentSource', { instance_id, document }) as {
-					source: string;
-					context?: DocumentContext;
-				};
-				source = result.source;
-				context = result.context || {};
-			}
+				if (filePath) {
+					source = await readFile(filePath, 'utf8');
+					// No live-doc context when validating a file.
+				} else {
+					const result = await ctx.sendToExtension('fileManager.getDocumentSource', { instance_id, document }) as {
+						source: string;
+						context?: DocumentContext;
+					};
+					source = result.source;
+					context = result.context || {};
+				}
 
-			const report = await validateByDocType(source, context.documentType, {
-				projectUuid: context.projectUuid,
-				documentUuid: context.documentUuid,
-			});
-			return { content: [{ type: 'text', text: JSON.stringify(report, null, 2) }] };
+				const report = await validateByDocType(source, context.documentType, {
+					projectUuid: context.projectUuid,
+					documentUuid: context.documentUuid,
+				});
+				return { content: [{ type: 'text', text: JSON.stringify(report, null, 2) }] };
+			},
 		},
-	);
+	];
 }
 
 export { SCHEMATIC_DOC_TYPE, PCB_DOC_TYPE };

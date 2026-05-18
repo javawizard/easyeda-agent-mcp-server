@@ -23,16 +23,16 @@ export function connectClaude(): void {
 		startLiveMode(extensionConfig.uuid);
 		eda.sys_Storage.setExtensionUserConfig(AUTO_CONNECT_KEY, true).catch(() => {});
 		eda.sys_Message.showToastMessage(
-			'Live mode enabled — scanning for Claude agents...',
+			'Live mode enabled — connecting to Claude bridge...',
 			ESYS_ToastMessageType.SUCCESS,
 			5,
 		);
 	} else {
-		const alreadyConnected = getConnectedPortCount();
+		const alreadyConnected = getConnectedPortCount() > 0;
 		eda.sys_Message.showToastMessage(
-			alreadyConnected > 0
-				? `Rescanning... (${alreadyConnected} already connected)`
-				: 'Rescanning for Claude agents...',
+			alreadyConnected
+				? `Already connected to Claude bridge (instance: ${(window as any).__claude_mcp_instance_id__ || ''})`
+				: 'Reconnecting to Claude bridge...',
 			ESYS_ToastMessageType.INFO,
 			3,
 		);
@@ -49,18 +49,18 @@ export function connectClaude(): void {
 }
 
 export function disconnectClaude(): void {
-	const count = getConnectedPortCount();
+	const wasConnected = getConnectedPortCount() > 0;
 	const wasLive = isLiveModeActive();
 	stopLiveMode();
 	eda.sys_Storage.deleteExtensionUserConfig(AUTO_CONNECT_KEY).catch(() => {});
 	disconnectFromAllMcpServers(extensionConfig.uuid);
 
-	if (count === 0 && !wasLive) {
-		eda.sys_Message.showToastMessage('Not connected to any Claude MCP Servers', ESYS_ToastMessageType.WARNING, 3);
+	if (!wasConnected && !wasLive) {
+		eda.sys_Message.showToastMessage('Not connected to Claude bridge', ESYS_ToastMessageType.WARNING, 3);
 		return;
 	}
 	eda.sys_Message.showToastMessage(
-		`Live mode disabled — disconnected from ${count} server${count === 1 ? '' : 's'}`,
+		'Live mode disabled — disconnected from Claude bridge',
 		ESYS_ToastMessageType.INFO,
 		3,
 	);

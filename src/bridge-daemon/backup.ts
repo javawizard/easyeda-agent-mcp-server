@@ -1,10 +1,10 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { writeFile, mkdir, access, rm } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve as resolvePath, sep } from 'node:path';
 import { homedir } from 'node:os';
 import JSZip from 'jszip';
-import type { WebSocketBridge } from './bridge';
+import type { ToolContext } from './types';
 
 const execFileP = promisify(execFile);
 
@@ -27,6 +27,29 @@ function docExtensionFor(docType: number | undefined): string {
 
 async function exists(path: string): Promise<boolean> {
 	try { await access(path); return true; } catch { return false; }
+}
+
+/**
+ * Collapse newlines and other control characters in extension-supplied strings
+ * before splicing them into git commit messages. Prevents log/commit-message
+ * forging via a project name containing `\n` (which would let the data appear
+ * as a forged trailer or split into multiple log lines).
+ */
+function sanitizeForCommitMsg(s: string): string {
+	return s.replace(/[\r\n\x00-\x1f\x7f]+/g, ' ').trim();
+}
+
+/**
+ * Join a zip entry name against a base directory, refusing entries that
+ * escape the base (path traversal via `../` or absolute paths). Returns null
+ * if the entry would land outside `base`; caller should skip those.
+ */
+function safeJoinZipEntry(base: string, entryName: string): string | null {
+	const target = resolvePath(base, entryName);
+	const baseResolved = resolvePath(base);
+	if (target === baseResolved) return null; // entry is the base dir itself, skip
+	if (!target.startsWith(baseResolved + sep)) return null;
+	return target;
 }
 
 async function ensureRepo(repoPath: string): Promise<void> {
@@ -106,14 +129,14 @@ export interface DocumentBackupParams {
  * Throws on any failure — callers should NOT proceed with the destructive op if backup fails.
  */
 export async function backupDocument(
-	bridge: WebSocketBridge,
+	ctx: ToolContext,
 	{ instance_id, document, toolName }: DocumentBackupParams,
 ): Promise<BackupResult> {
-	const result = await bridge.send('fileManager.getDocumentSource', { instance_id, document }) as DocSourceResponse;
-	const ctx = result.context || {};
-	const projectUuid = ctx.projectUuid || 'unknown-project';
-	const docUuid = ctx.documentUuid || document.split('@')[0];
-	const ext = docExtensionFor(ctx.documentType);
+	const result = await ctx.sendToExtension('fileManager.getDocumentSource', { instance_id, document }) as DocSourceResponse;
+	const docCtx = result.context || {};
+	const projectUuid = docCtx.projectUuid || 'unknown-project';
+	const docUuid = docCtx.documentUuid || document.split('@')[0];
+	const ext = docExtensionFor(docCtx.documentType);
 
 	const repo = getBackupDir();
 	await ensureRepo(repo);
@@ -125,10 +148,11 @@ export async function backupDocument(
 
 	const projectSubpath = join('projects', projectUuid);
 	const shaBefore = await getHead(repo);
+	const projectNameClean = docCtx.projectName ? sanitizeForCommitMsg(docCtx.projectName) : '';
 	const sha = await commitAndGetSha(
 		repo,
 		projectSubpath,
-		`${toolName}: doc ${docUuid}${ctx.projectName ? ` in "${ctx.projectName}"` : ''} (project ${projectUuid})`,
+		`${toolName}: doc ${docUuid}${projectNameClean ? ` in "${projectNameClean}"` : ''} (project ${projectUuid})`,
 	);
 	return { sha, path: subpath, absolutePath: absPath, repo, changed: sha !== shaBefore };
 }
@@ -152,10 +176,10 @@ export interface ProjectBackupParams {
  * Must be called before any destructive project-level operation.
  */
 export async function backupProject(
-	bridge: WebSocketBridge,
+	ctx: ToolContext,
 	{ instance_id, projectUuid, toolName }: ProjectBackupParams,
 ): Promise<BackupResult> {
-	const result = await bridge.send('fileManager.getProjectFileByUuid', {
+	const result = await ctx.sendToExtension('fileManager.getProjectFileByUuid', {
 		instance_id,
 		projectUuid,
 	}) as ProjectFileResponse;
@@ -174,10 +198,15 @@ export async function backupProject(
 	await rm(absSnapshot, { recursive: true, force: true });
 	await mkdir(absSnapshot, { recursive: true });
 
-	// Extract ZIP contents.
+	// Extract ZIP contents. safeJoinZipEntry refuses entries that would write
+	// outside absSnapshot (path traversal via `../` or absolute paths).
 	for (const [name, entry] of Object.entries(zip.files)) {
 		if (entry.dir) continue;
-		const outPath = join(absSnapshot, name);
+		const outPath = safeJoinZipEntry(absSnapshot, name);
+		if (outPath === null) {
+			console.error(`[backup] skipping zip entry that escapes snapshot dir: ${JSON.stringify(name)}`);
+			continue;
+		}
 		const data = await entry.async('nodebuffer');
 		await mkdir(dirname(outPath), { recursive: true });
 		await writeFile(outPath, data);
@@ -185,10 +214,11 @@ export async function backupProject(
 
 	const projectSubpath = join('projects', projectUuid);
 	const shaBefore = await getHead(repo);
+	const projectNameClean = result.projectName ? sanitizeForCommitMsg(result.projectName) : '';
 	const sha = await commitAndGetSha(
 		repo,
 		projectSubpath,
-		`${toolName}: project ${projectUuid}${result.projectName ? ` ("${result.projectName}")` : ''}`,
+		`${toolName}: project ${projectUuid}${projectNameClean ? ` ("${projectNameClean}")` : ''}`,
 	);
 	return { sha, path: snapshotSubpath, absolutePath: absSnapshot, repo, changed: sha !== shaBefore };
 }

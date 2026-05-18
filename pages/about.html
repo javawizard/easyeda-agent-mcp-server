@@ -363,12 +363,12 @@
     document.getElementById('instanceId').textContent = data.instanceId || '--------';
     document.getElementById('version').textContent = data.version || '--';
 
-    var count = data.connectedPorts || 0;
+    var connected = (data.connectedPorts || 0) > 0;
     var dot = document.getElementById('statusDot');
     var text = document.getElementById('statusText');
-    if (count > 0) {
+    if (connected) {
       dot.className = 'status-dot connected';
-      text.textContent = count + ' agent' + (count > 1 ? 's' : '');
+      text.textContent = 'Connected to bridge';
     } else {
       dot.className = 'status-dot disconnected';
       text.textContent = 'Not connected';

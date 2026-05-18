@@ -27,6 +27,20 @@ const mcpServerConfig: esbuild.BuildOptions = {
 	external: [],
 };
 
+// Bridge daemon: CJS for Node.js. Shipped as a sibling of dist/mcp-server so
+// spawn.ts can resolve it via __dirname/../bridge-daemon/index.js.
+const bridgeDaemonConfig: esbuild.BuildOptions = {
+	entryPoints: { 'index': './src/bridge-daemon/index' },
+	entryNames: '[name]',
+	bundle: true,
+	minify: false,
+	outdir: './dist/bridge-daemon/',
+	platform: 'node',
+	format: 'cjs',
+	treeShaking: true,
+	external: [],
+};
+
 (async () => {
 	// Build extension
 	await esbuild.build(extensionConfig);
@@ -35,4 +49,8 @@ const mcpServerConfig: esbuild.BuildOptions = {
 	// Build MCP server
 	await esbuild.build(mcpServerConfig);
 	console.log('[esbuild] MCP Server built');
+
+	// Build bridge daemon
+	await esbuild.build(bridgeDaemonConfig);
+	console.log('[esbuild] Bridge daemon built');
 })();
