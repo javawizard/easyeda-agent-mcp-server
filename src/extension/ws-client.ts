@@ -196,7 +196,11 @@ async function getInstanceInfo(): Promise<Record<string, any>> {
 
 		return {
 			instanceId,
-			projectName: proj?.name ?? proj?.title,
+			// Prefer friendlyName (user-visible display name) over name (a URL
+			// slug populated by the web backend but absent on desktop-local
+			// projects). Both fields are declared on IDMT_ProjectItem in
+			// pro-api/api-types.d.ts.
+			projectName: proj?.friendlyName ?? proj?.name,
 			currentDocument: doc?.tabId,
 			documentType: doc?.documentType != null ? (DOC_TYPE_NAMES[doc.documentType] || `type_${doc.documentType}`) : undefined,
 			documents,
