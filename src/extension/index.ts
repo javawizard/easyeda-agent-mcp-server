@@ -66,14 +66,15 @@ export function disconnectClaude(): void {
 	);
 }
 
-export async function about(): Promise<void> {
-	// Get current theme so the dialog can match
-	let theme = 'light';
-	try {
-		theme = await eda.sys_Window.getCurrentTheme();
-	} catch {
-		// Default to light if API unavailable
-	}
+export function about(): void {
+	// Theme awareness is disabled: eda.sys_Window.getCurrentTheme() is broken in
+	// EasyEDA Pro 2.2.47.7 — the main-thread RPC handler was dropped (the worker
+	// stub and the public `getCurrentTheme(): Promise<ESYS_Theme>` type are still
+	// present, so this is an EasyEDA regression, not an intentional removal). With
+	// nothing answering the RPC, the call only settles via the extension API's
+	// 5-minute default timeout, which blocked this handler and stopped the About
+	// dialog from ever opening. Hardcode the theme until EasyEDA restores the API.
+	const theme = 'light';
 
 	// Set data on globalThis for the iframe to read
 	(globalThis as any).__claude_about_data__ = {
